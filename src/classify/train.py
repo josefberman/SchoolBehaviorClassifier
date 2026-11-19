@@ -63,6 +63,7 @@ def train_classifier(
     sim_root: Path | None = None,
     include_transitions: bool | None = None,
     stable_only: bool = False,
+    feature_names: list[str] | None = None,
 ) -> dict:
     out_dir = out_dir or (ROOT / "results")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -78,6 +79,7 @@ def train_classifier(
         mode=mode,
         include_transitions=include_transitions,
         stable_only=stable_only,
+        feature_names=feature_names,
     )
     X_tr, y_tr, feat_names = build_sim_xy(split="train", **xy_kw)
     X_te, y_te, _ = build_sim_xy(split="test", **xy_kw)

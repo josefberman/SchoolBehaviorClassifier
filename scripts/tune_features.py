@@ -108,7 +108,7 @@ def main() -> None:
         default=ROOT / "results" / "calibration_report_real.json",
         help="Real calibration report (default: results/calibration_report_real.json)",
     )
-    parser.add_argument("--trials", type=int, default=100, help="CMA-ES evaluations per behavior")
+    parser.add_argument("--trials", type=int, default=500, help="CMA-ES evaluations per behavior")
     parser.add_argument("--n-seeds", type=int, default=30, help="Seeds per group size")
     parser.add_argument(
         "--n-values",

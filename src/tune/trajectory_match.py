@@ -1,6 +1,6 @@
 """Tune behavior YAMLs so simulations reproduce configs extracted from real tracks.
 
-1. Extraction: each 15-frame window of an annotation interval becomes one row of
+1. Extraction: each 5-frame window of an annotation interval becomes one row of
    annotated_config.csv.
    The fit is the simulator's own update: heading and speed changes are a
    clipped normal (Tobit) of the zone torques and of (s_0 - speed). The clip
@@ -44,7 +44,7 @@ MIN_STEPS = 10
 SPEED_EPS = 1e-3
 _FIT_ROWS = 30000
 # Non-overlapping; a short tail is dropped.
-EXTRACT_WINDOW_FRAMES = 15
+EXTRACT_WINDOW_FRAMES = 5
 _WEIGHTS = ("w_r", "w_o", "w_a", "w_tan", "w_rad")
 RADIUS_COLUMNS = ("r_r", "r_o", "r_a")
 # Continuous search box. Every ordered triple inside it is a legal zone.
@@ -379,7 +379,7 @@ def build_annotated_config(
     radii: dict[str, float] | None = None,
     behaviors: list[str] | None = None,
 ) -> pd.DataFrame:
-    """One row per non-overlapping 15-frame window inside each canonical interval.
+    """One row per non-overlapping 5-frame window inside each canonical interval.
 
     With ``radii`` every window uses that triple. Without it each window's radii
     come from ``fit_radii``.

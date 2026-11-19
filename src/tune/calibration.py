@@ -17,7 +17,7 @@ from src.labels import CANONICAL
 from src.sim.config import deep_merge
 from src.sim.model_fast import run_simulation_fast
 
-FEATURE_WEIGHTS: dict[str, float] = {name: 1.0 for name in CALIBRATION_FEATURE_NAMES}
+FEATURE_WEIGHTS: dict[str, float] = {name: 1.0 for name in CALIBRATION_FEATURE_NAMES if not name.endswith("_rate")}
 FEATURE_STD_FLOOR: dict[str, float] = {
     name: (0.05 if name.endswith("_rate") else 0.03) for name in CALIBRATION_FEATURE_NAMES
 }
@@ -111,7 +111,7 @@ def behavior_calibration_loss(
 ) -> float:
     """Weighted MSE of sim vs real feature means and stds (lower is better).
 
-    Each window feature (Φ mean and 5-point dΦ/dt) contributes equally-weighted
+    Each window feature (Φ mean) contributes equally-weighted
     mean and std residuals, scaled by the real-window std. Targets that do not
     yet store a feature are skipped.
     """

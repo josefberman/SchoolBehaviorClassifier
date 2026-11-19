@@ -1,4 +1,4 @@
-"""Evaluate trained classifier on 15-frame windows of real annotated segments."""
+"""Evaluate trained classifier on 5-frame windows of real annotated segments."""
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ def eval_real(
     out_dir: Path | None = None,
     include_transitions: bool | None = None,
     stable_only: bool = False,
+    feature_names: list[str] | None = None,
 ) -> dict:
     out_dir = out_dir or (ROOT / "results")
     model_path = model_path or (out_dir / "classifier.joblib")
@@ -39,10 +40,12 @@ def eval_real(
     if stable_only:
         include_transitions = False
 
+    feature_names = feature_names or list(bundle.get("feature_names") or [])
     X_all, y_all, _, _meta_all = build_real_xy(
         include_transitions=include_transitions,
         stable_only=stable_only,
         mode="windows",
+        feature_names=feature_names or None,
     )
     known = set(le.classes_)
     known_mask = np.array([yi in known for yi in y_all])

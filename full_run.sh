@@ -5,23 +5,27 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
 usage() {
-  echo "Usage: $0 [--skip-extract] [--transitions] [--radii R_R R_O R_A]" >&2
+  echo "Usage: $0 [--skip-calibrate] [--transitions] [--radii R_R R_O R_A]" >&2
   echo "  Example: $0" >&2
   echo "  Example: $0 --transitions" >&2
-  echo "  Example: $0 --radii 37.9 99.9 188.2" >&2
+  echo "  Example: $0 --radii 50 100 150" >&2
   exit 1
 }
 
-SKIP_EXTRACT=0
+SKIP_CALIBRATE=0
 TRANSITIONS=0
-RADII_ARGS=()
+R_R=50
+R_O=100
+R_A=150
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --skip-extract) SKIP_EXTRACT=1 ;;
+    --skip-calibrate) SKIP_CALIBRATE=1 ;;
     --transitions) TRANSITIONS=1 ;;
     --radii)
       [[ $# -ge 4 ]] || usage
-      RADII_ARGS=(--fixed-radii --r-r "$2" --r-o "$3" --r-a "$4")
+      R_R="$2"
+      R_O="$3"
+      R_A="$4"
       shift 3
       ;;
     *) usage ;;
@@ -33,17 +37,18 @@ TRANSITION_ARGS=()
 if [[ "$TRANSITIONS" -eq 1 ]]; then
   TRANSITION_ARGS=(--transitions)
 fi
+RADII_ARGS=(--r-r "$R_R" --r-o "$R_O" --r-a "$R_A")
 
-echo "full_run transitions=${TRANSITIONS} radii=${RADII_ARGS[*]:-extracted}"
+echo "full_run transitions=${TRANSITIONS} radii=${R_R}/${R_O}/${R_A}"
 
-if [[ "$SKIP_EXTRACT" -eq 0 ]]; then
-  python scripts/tune_trajectories.py --extract "${RADII_ARGS[@]}"
+python scripts/tune_features.py --set-radii "${RADII_ARGS[@]}"
+if [[ "$SKIP_CALIBRATE" -eq 0 ]]; then
+  python scripts/calibrate_baselines.py --source real
 else
-  echo "Skipping tune_trajectories.py --extract"
+  echo "Skipping calibrate_baselines.py (reusing results/calibration_report.json)"
 fi
-
-python scripts/tune_trajectories.py --trials 300 "${RADII_ARGS[@]}"
-python scripts/tune_trajectories.py --apply-best
+python scripts/tune_features.py --target results/calibration_report.json --trials 500 --n-seeds 5 --n-values 20 40
+python scripts/tune_features.py --apply-best "${RADII_ARGS[@]}"
 python scripts/generate_sims.py --render --video --render-seeds 0 "${TRANSITION_ARGS[@]}"
 if [[ "$TRANSITIONS" -eq 1 ]]; then
   python scripts/train_classifier.py --transitions

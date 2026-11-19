@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import numpy as np
 
-# Instantaneous per-frame values. Classifier samples are 15-frame windows:
-# the mean of each Φ, plus the mean 5-point-stencil dΦ/dt over that window.
+# Instantaneous per-frame values. Classifier samples are 5-frame window means of these.
 FEATURE_NAMES = (
     "phi_trans",
     "phi_tan",
     "phi_rad_pm",
+    "phi_local",
 )
+
+K_LOCAL = 5
 
 
 def _unit_vectors(vel: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -19,6 +21,31 @@ def _unit_vectors(vel: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     moving = speeds > 1e-9
     hat_v[moving] = vel[moving] / speeds[moving, None]
     return hat_v, moving
+
+
+def _local_alignment(pos: np.ndarray, hat_v: np.ndarray, k: int = K_LOCAL) -> np.ndarray:
+    """Mean neighborhood polarization over k nearest neighbors (excluding self)."""
+    t, n, _ = pos.shape
+    if n <= 1:
+        return np.zeros(t)
+    k = min(int(k), n - 1)
+    out = np.zeros(t)
+    # Chunk time so the T×N×N distance cube stays in cache / RAM.
+    step = 64 if n * n * 64 * 8 < 256 * 1024 * 1024 else max(1, 8_000_000 // max(n * n, 1))
+    idx = np.arange(n)
+    for start in range(0, t, step):
+        sl = slice(start, min(t, start + step))
+        block = pos[sl]
+        hv = hat_v[sl]
+        tb = block.shape[0]
+        delta = block[:, :, None, :] - block[:, None, :, :]
+        d2 = np.einsum("tijn,tijn->tij", delta, delta)
+        d2[:, idx, idx] = np.inf
+        nn = np.argpartition(d2, kth=k - 1, axis=-1)[..., :k]
+        t_idx = np.arange(tb)[:, None, None]
+        neigh_v = hv[t_idx, nn]
+        out[sl] = np.linalg.norm(neigh_v.mean(axis=2), axis=-1).mean(axis=1)
+    return out
 
 
 def compute_order_params(
@@ -44,6 +71,7 @@ def compute_order_params_series(
 
     Φ_rad^± = (∑_i v'_i · r'_i) / D
     Φ_tan   = |∑_i (r'_i × v'_i)_z| / D
+    Φ_local = (1/N) ∑_i || (1/|N_i|) ∑_{j∈N_i} v̂_j ||   (k=5 nearest neighbors)
     """
     pos = np.asarray(positions, dtype=np.float64)
     vel = np.asarray(velocities, dtype=np.float64)
@@ -84,6 +112,7 @@ def compute_order_params_series(
         "phi_trans": phi_trans,
         "phi_tan": phi_tan,
         "phi_rad_pm": phi_rad_pm,
+        "phi_local": _local_alignment(pos, hat_v, k=K_LOCAL),
     }
 
 
@@ -111,7 +140,7 @@ def aggregate_series(
     series: dict[str, np.ndarray],
     fps: float = 30.0,
 ) -> dict[str, float]:
-    """Mean and std of each series, plus its mean 5-point rate."""
+    """Mean and std of each series."""
     feat: dict[str, float] = {}
     for k, arr in series.items():
         feat[f"{k}_mean"] = float(np.mean(arr)) if arr.size else 0.0
@@ -120,6 +149,6 @@ def aggregate_series(
     return feat
 
 
-AGG_FEATURE_NAMES = [f"{k}_mean" for k in FEATURE_NAMES] + [f"{k}_rate" for k in FEATURE_NAMES]
+AGG_FEATURE_NAMES = [f"{k}_mean" for k in FEATURE_NAMES]
 # Calibration reports store window-mean columns under the bare Φ name.
-CALIBRATION_FEATURE_NAMES = list(FEATURE_NAMES) + [f"{k}_rate" for k in FEATURE_NAMES]
+CALIBRATION_FEATURE_NAMES = list(FEATURE_NAMES)

@@ -51,13 +51,13 @@ def features_from_sim_entry(
     window_frames: int = WINDOW_FRAMES,
     hop_frames: int = HOP_FRAMES,
     sim_root: Path | None = None,
+    feature_names: list[str] | None = None,
 ) -> list[tuple[np.ndarray, str]]:
     """Return list of (x, label).
 
     Baseline clips use the full recording. Transition clips use only the morph
     window (morph_start .. morph_end) so features match real transition segments.
-    mode='windows' emits one row per non-overlapping 15-frame window
-    (mean Φ and its 5-point time derivative).
+    mode='windows' emits one row per non-overlapping 5-frame window (mean Φ over the window).
     """
     sim_root = sim_root or (ROOT / "sim_datasets")
     csv_path = Path(entry["csv"])
@@ -87,7 +87,7 @@ def features_from_sim_entry(
         )
     else:
         feats = [segment_feature_vector(pos, vel, fps=fps)]
-    return [(feature_dict_to_array(f), label) for f in feats]
+    return [(feature_dict_to_array(f, feature_names), label) for f in feats]
 
 
 def manifest_has_transitions(manifest_path: Path | None = None) -> bool:
@@ -103,6 +103,7 @@ def build_sim_xy(
     hop_frames: int = HOP_FRAMES,
     include_transitions: bool = True,
     stable_only: bool = False,
+    feature_names: list[str] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
     manifest_path = manifest_path or (ROOT / "sim_datasets" / "manifest.json")
     sim_root = sim_root or manifest_path.parent
@@ -126,11 +127,16 @@ def build_sim_xy(
     xs, ys = [], []
     for e in entries:
         for x, y in features_from_sim_entry(
-            e, mode=mode, window_frames=window_frames, hop_frames=hop_frames, sim_root=sim_root
+            e,
+            mode=mode,
+            window_frames=window_frames,
+            hop_frames=hop_frames,
+            sim_root=sim_root,
+            feature_names=feature_names,
         ):
             xs.append(x)
             ys.append(y)
-    names = _names_for_mode(mode)
+    names = feature_names or _names_for_mode(mode)
     if not xs:
         return np.zeros((0, len(names))), np.array([], dtype=object), names
     return np.vstack(xs), np.array(ys, dtype=object), names
@@ -187,6 +193,7 @@ def build_real_xy(
     mode: str = "windows",
     window_frames: int = WINDOW_FRAMES,
     hop_frames: int = HOP_FRAMES,
+    feature_names: list[str] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, list[str], list[dict]]:
     segs = load_real_segments()
     if not include_transitions:
@@ -212,15 +219,15 @@ def build_real_xy(
                 fps=s["fps"],
             )
             for feat in feats:
-                xs.append(feature_dict_to_array(feat))
+                xs.append(feature_dict_to_array(feat, feature_names))
                 ys.append(s["label"])
                 kept.append(s)
         else:
             feat = segment_feature_vector(pos[a:b], vel[a:b], fps=s["fps"])
-            xs.append(feature_dict_to_array(feat))
+            xs.append(feature_dict_to_array(feat, feature_names))
             ys.append(s["label"])
             kept.append(s)
-    names = _names_for_mode(mode)
+    names = feature_names or _names_for_mode(mode)
     if not xs:
         return np.zeros((0, len(names))), np.array([], dtype=object), names, []
     return np.vstack(xs), np.array(ys, dtype=object), names, kept

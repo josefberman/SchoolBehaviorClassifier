@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -123,12 +124,21 @@ def _rewrite_json_order(path: Path) -> None:
 
 
 def main() -> None:
-    sim_json = ROOT / "results" / "sim_test_metrics.json"
-    real_json = ROOT / "results" / "real_eval_metrics.json"
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--dir",
+        type=Path,
+        default=ROOT / "results",
+        help="Folder with sim_test_metrics.json and real_eval_metrics.json; PNGs are written there",
+    )
+    args = parser.parse_args()
+    folder = args.dir
+    sim_json = folder / "sim_test_metrics.json"
+    real_json = folder / "real_eval_metrics.json"
     _rewrite_json_order(sim_json)
     _rewrite_json_order(real_json)
-    plot_cm(sim_json, ROOT / "results" / "sim_confusion.png", "Sim test confusion")
-    plot_cm(real_json, ROOT / "results" / "real_confusion.png", "Real annotation confusion")
+    plot_cm(sim_json, folder / "sim_confusion.png", "Sim test confusion")
+    plot_cm(real_json, folder / "real_confusion.png", "Real annotation confusion")
 
 
 if __name__ == "__main__":

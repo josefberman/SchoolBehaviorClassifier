@@ -10,10 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.classify.train import train_classifier
+from src.features.order_params import FEATURE_NAMES
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train classifier on 15-frame windows of simulated features.")
+    parser = argparse.ArgumentParser(description="Train classifier on 5-frame windows of simulated features.")
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
         "--transitions",
@@ -46,6 +47,11 @@ def main() -> None:
         default=ROOT / "results",
         help="Directory for classifier.joblib and sim_test_metrics.json",
     )
+    parser.add_argument(
+        "--no-rates",
+        action="store_true",
+        help="Train on the window means only; drop the four dΦ/dt features",
+    )
     args = parser.parse_args()
 
     sim_root = args.sim_root or args.manifest.parent
@@ -56,6 +62,7 @@ def main() -> None:
         sim_root=sim_root,
         include_transitions=False if stable_only else args.transitions,
         stable_only=stable_only,
+        feature_names=[f"{name}_mean" for name in FEATURE_NAMES] if args.no_rates else None,
     )
     summary = {k: report[k] for k in report if k != "classification_report"}
     print(json.dumps(summary, indent=2))

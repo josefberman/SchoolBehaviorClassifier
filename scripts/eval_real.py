@@ -10,10 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.classify.eval import eval_real
+from src.features.order_params import FEATURE_NAMES
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate classifier on 15-frame windows of real annotated segments.")
+    parser = argparse.ArgumentParser(description="Evaluate classifier on 5-frame windows of real annotated segments.")
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
         "--transitions",
@@ -40,6 +41,11 @@ def main() -> None:
         default=ROOT / "results",
         help="Directory for real_eval_metrics.json",
     )
+    parser.add_argument(
+        "--no-rates",
+        action="store_true",
+        help="Evaluate on the window means only; drop the four dΦ/dt features",
+    )
     args = parser.parse_args()
 
     stable_only = args.transitions is False
@@ -48,6 +54,7 @@ def main() -> None:
         out_dir=args.out_dir,
         include_transitions=False if stable_only else args.transitions,
         stable_only=stable_only,
+        feature_names=[f"{name}_mean" for name in FEATURE_NAMES] if args.no_rates else None,
     )
     summary = {k: report[k] for k in report if k != "classification_report"}
     print(json.dumps(summary, indent=2))

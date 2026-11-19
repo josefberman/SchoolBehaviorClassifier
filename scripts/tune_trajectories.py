@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tune behavior YAMLs to match configs extracted from real trajectories.
 
-  --extract      fit one config per 15-frame window -> annotated_config.csv,
+  --extract      fit one config per 5-frame window -> annotated_config.csv,
                  including r_r, r_o, r_a (any ordered triple inside the radius bounds).
                  With --fixed-radii, every window uses --r-r/--r-o/--r-a instead.
   (default)      CMA-ES over SEARCH_SPACE at the mean extracted radii. Radii are

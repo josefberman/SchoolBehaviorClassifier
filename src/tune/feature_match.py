@@ -40,7 +40,7 @@ def _feat_progress(sf: dict) -> str:
         short = name.removeprefix("phi_")
         m = sf[name]["mean"]
         s = sf[name]["std"]
-        if name == "phi_rad_pm" or name.endswith("_rate"):
+        if name == "phi_rad_pm":
             parts.append(f"{short}={m:+.3f}±{s:.3f}")
         else:
             parts.append(f"{short}={m:.3f}±{s:.3f}")
@@ -118,16 +118,14 @@ def tune_behavior(
             "sim_features": block["features"],
         }
         trials.append(record)
-        if show_progress:
-            print(
-                f"  trial {record['trial']:4d}/{n_trials}  loss={loss:.4f}  "
-                f"{_feat_progress(block['features'])}"
-            )
         if loss < best_loss:
             best_loss = float(loss)
             best_overrides = ov
             if show_progress:
-                print(f"    new best (loss={best_loss:.4f})")
+                print(
+                    f"  trial {record['trial']:4d}/{n_trials}  loss={loss:.4f}  "
+                    f"{_feat_progress(block['features'])}"
+                )
         return float(loss) if np.isfinite(loss) else 1e6
 
     if show_progress:
@@ -135,7 +133,7 @@ def tune_behavior(
         print(f"  CMA-ES: {n_trials} evaluations in {dim}D  (σ0={sigma0}, λ={popsize})")
         print(f"  search  {', '.join(tuned)}")
         print(
-            f"  matching mean+std of {len(CALIBRATION_FEATURE_NAMES)} 15-frame window features: "
+            f"  matching mean+std of {len(CALIBRATION_FEATURE_NAMES)} 5-frame window features: "
             f"{', '.join(CALIBRATION_FEATURE_NAMES)}"
         )
         print(f"  target  {_feat_progress(target_block['features'])}")
