@@ -116,39 +116,6 @@ def compute_order_params_series(
     }
 
 
-# Central 5-point weights for f'(x), samples at x-2h .. x+2h, divided by h.
-# Exact for polynomials through degree 4.
-_STENCIL_5 = np.array([1.0, -8.0, 0.0, 8.0, -1.0], dtype=np.float64)
-_STENCIL_5_DENOM = 12.0
-
-
-def five_point_derivative(samples: np.ndarray, fps: float) -> float:
-    """Mean dΦ/dt in s⁻¹ over frames spaced by h = 1/fps.
-
-    The central 5-point stencil is applied at every frame with two neighbors on
-    each side, and those derivatives are averaged.
-    """
-    y = np.asarray(samples, dtype=np.float64)
-    if y.ndim != 1 or y.size < 5:
-        raise ValueError(f"5-point stencil needs at least 5 frames, got shape {y.shape}")
-    h = 1.0 / float(fps)
-    d = np.convolve(y, _STENCIL_5[::-1], mode="valid") / (_STENCIL_5_DENOM * h)
-    return float(d.mean())
-
-
-def aggregate_series(
-    series: dict[str, np.ndarray],
-    fps: float = 30.0,
-) -> dict[str, float]:
-    """Mean and std of each series."""
-    feat: dict[str, float] = {}
-    for k, arr in series.items():
-        feat[f"{k}_mean"] = float(np.mean(arr)) if arr.size else 0.0
-        feat[f"{k}_std"] = float(np.std(arr)) if arr.size else 0.0
-        feat[f"{k}_rate"] = five_point_derivative(arr, fps) if arr.size >= 5 else 0.0
-    return feat
-
-
 AGG_FEATURE_NAMES = [f"{k}_mean" for k in FEATURE_NAMES]
 # Calibration reports store window-mean columns under the bare Φ name.
 CALIBRATION_FEATURE_NAMES = list(FEATURE_NAMES)
