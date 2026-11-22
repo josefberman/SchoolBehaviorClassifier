@@ -202,7 +202,9 @@ def compute_extended_series(positions: np.ndarray, velocities: np.ndarray) -> di
             continue
         cov = np.cov(pos[i, vi].T)
         evals = np.sort(np.linalg.eigvalsh(cov))
-        aspect[i] = np.sqrt(max(evals[-1], 0.0) / max(evals[0], 1e-12))
+        aspect[i] = float(
+            np.clip(np.sqrt(max(evals[-1], 0.0) / max(evals[0], 1e-6)), 1.0, 20.0)
+        )
 
     density = n_valid / np.maximum(np.pi * R_gyr**2, 1.0)
     com_vel = np.stack(

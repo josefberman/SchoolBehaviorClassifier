@@ -101,7 +101,14 @@ def main() -> None:
         tag = fname.stem.replace("feature_ablation_", "")
         for task in summary.get("tasks", {}):
             ablation_bars(summary, task, FIG / f"ablation_{task}_{tag}.png")
-            for abl in ("baseline", "all", "physical", "nonphysical", "baseline+spectral"):
+            for abl in (
+                "baseline",
+                "baseline+rate",
+                "all",
+                "physical",
+                "nonphysical",
+                "baseline+spectral",
+            ):
                 if abl in summary["tasks"][task]:
                     confusion(summary, task, abl, FIG / f"cm_{task}_{abl}_{tag}.png")
                     importance(summary, task, abl, FIG / f"imp_{task}_{abl}_{tag}.png")

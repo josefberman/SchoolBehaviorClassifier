@@ -27,7 +27,7 @@ from src.labels import BEHAVIOR_SHORT, CANONICAL, is_transition
 from src.sim.config import CONFIG_DIR, DEFAULTS, deep_merge
 from src.sim.model_fast import run_simulation_fast
 from src.sim.realistic import run_realistic
-from src.sim.render import save_still
+from src.sim.render import save_still, save_video
 
 OUT = ROOT / "research" / "results"
 FIG = ROOT / "research" / "figures"
@@ -102,96 +102,78 @@ def compare(real, sim) -> dict:
         for k in STAT_KEYS:
             r = _finite(real.get(lab, {}).get(k, []))
             s = _finite(sim.get(lab, {}).get(k, []))
+            if k == "aspect":
+                r = r[(r >= 1.0) & (r <= 20.0)]
+                s = s[(s >= 1.0) & (s <= 20.0)]
             if r.size == 0 or s.size == 0:
                 report[lab][k] = {"n_real": int(r.size), "n_sim": int(s.size)}
                 continue
-            # subsample for KS speed
             rng = np.random.default_rng(0)
             rr = r if r.size <= 8000 else rng.choice(r, 8000, replace=False)
             ss = s if s.size <= 8000 else rng.choice(s, 8000, replace=False)
             ks = ks_2samp(rr, ss)
+            rstd = float(np.std(r))
+            w = float(wasserstein_distance(rr, ss))
             report[lab][k] = {
                 "n_real": int(r.size),
                 "n_sim": int(s.size),
                 "real_mean": float(np.mean(r)),
-                "real_std": float(np.std(r)),
+                "real_std": rstd,
                 "sim_mean": float(np.mean(s)),
                 "sim_std": float(np.std(s)),
-                "wasserstein": float(wasserstein_distance(rr, ss)),
+                "wasserstein": w,
+                "wasserstein_over_std": float(w / max(rstd, 1e-9)),
                 "ks_stat": float(ks.statistic),
                 "ks_p": float(ks.pvalue),
             }
     return report
 
 
-def mean_w(report: dict) -> float:
+def mean_w(report: dict, key: str = "wasserstein") -> float:
     vals = []
     for lab in report:
         for k in report[lab]:
-            if "wasserstein" in report[lab][k]:
-                vals.append(report[lab][k]["wasserstein"])
+            if key in report[lab][k]:
+                vals.append(report[lab][k][key])
     return float(np.mean(vals)) if vals else float("nan")
 
 
 def write_fit_yamls() -> dict[str, dict]:
-    """Median inverse-fitted parameters per stable label → configs/behaviors_fit/."""
+    """Speed-matched configs: original Couzin weights *and* radii, real s_0.
+
+    Two failed alternatives (documented in REPORT.md):
+    1. Dropping window-level Tobit MLE weights into YAML (w_o ~ 0.08) destroys
+       cohesion — schools explode to the tank wall.
+    2. Scaling radii to real NND (~50 px) while keeping original weights
+       matches NND but kills milling (M 0.73 → 0.37) and expansion Φ_rad.
+
+    Speed and interaction scale are not independently tunable. This fit only
+    matches preferred speed / fps / OU heading noise, which is the change that
+    improves KS without collapsing the order-parameter signatures.
+    """
     df = pd.read_csv(ROOT / "annotated_config.csv")
     FIT_DIR.mkdir(parents=True, exist_ok=True)
     medians = {}
-    param_cols = [
-        "w_r",
-        "w_o",
-        "w_a",
-        "w_tan",
-        "w_rad",
-        "sigma_theta",
-        "s_0",
-        "sigma_s",
-        "omega_max",
-        "a_max",
-        "r_r",
-        "r_o",
-        "r_a",
-    ]
+    kin_cols = ("s_0", "sigma_s", "omega_max", "a_max")
     for lab in CANONICAL:
-        sub = df[df["label"] == lab]
-        if sub.empty:
-            continue
-        med = {c: float(np.nanmedian(sub[c])) for c in param_cols if c in sub.columns}
-        # Keep exclusive Couzin radii; fall back to locked 50/100/150.
-        r_r, r_o, r_a = med.get("r_r", 50.0), med.get("r_o", 100.0), med.get("r_a", 150.0)
-        if not (0 < r_r < r_o < r_a):
-            r_r, r_o, r_a = 50.0, 100.0, 150.0
         short = BEHAVIOR_SHORT[lab]
-        cfg = {
-            "behavior": lab if lab != "traveling" else "traveling",
-            "r_r": 50.0,
-            "r_o": 100.0,
-            "r_a": 150.0,
-            "w_r": max(med.get("w_r", 1.0), 0.0),
-            "w_o": max(med.get("w_o", 1.0), 0.0),
-            "w_a": max(med.get("w_a", 0.8), 0.0),
-            "w_tan": max(med.get("w_tan", 0.0), 0.0),
-            "w_rad": med.get("w_rad", 0.0),
-            "sigma_theta": float(np.clip(med.get("sigma_theta", 0.08), 0.01, 0.4)),
-            "s_0": float(np.clip(med.get("s_0", 1.5), 0.3, 4.0)),
-            "sigma_s": float(np.clip(med.get("sigma_s", 0.1), 0.0, 1.5)),
-            "omega_max": float(np.clip(med.get("omega_max", 0.35), 0.05, 1.2)),
-            "a_max": float(np.clip(med.get("a_max", 0.8), 0.05, 2.5)),
-            "fps": 29.97,
-            "dt": 1.0,
-            "burn_in": 400 if lab in ("expansion", "compaction") else 600,
-            "record_frames": 180,
-            "speed_dep_turn": True,
-            "ou_rho": 0.6,
-            "init_span": 0.22,
-        }
-        if lab in ("expansion", "compaction"):
-            cfg["init_from"] = "traveling"
-            cfg["burn_in"] = 500
-        if lab == "milling":
-            cfg["arena"] = {"wall_margin": 55.0, "w_wall": 3.5}
-        medians[lab] = {"from_data": med, "written": cfg}
+        with open(CONFIG_DIR / f"{short}.yaml", encoding="utf-8") as f:
+            orig = yaml.safe_load(f) or {}
+        sub = df[df["label"] == lab]
+        med = {c: float(np.nanmedian(sub[c])) for c in kin_cols if c in sub.columns} if len(sub) else {}
+        cfg = dict(orig)
+        cfg["behavior"] = lab
+        if med:
+            cfg["s_0"] = float(np.clip(med["s_0"], 0.6, 3.5))
+            cfg["sigma_s"] = float(np.clip(med.get("sigma_s", cfg.get("sigma_s", 0.1)), 0.02, 0.8))
+            # keep original omega_max / a_max / radii / social weights
+        cfg["fps"] = 29.97
+        cfg["dt"] = 1.0
+        cfg["speed_dep_turn"] = True
+        cfg["ou_rho"] = 0.2
+        cfg["record_frames"] = int(orig.get("record_frames", 150))
+        cfg["burn_in"] = int(orig.get("burn_in", 600))
+        medians[lab] = {"from_data_kinematics": med, "written": cfg}
         with open(FIT_DIR / f"{short}.yaml", "w", encoding="utf-8") as f:
             yaml.safe_dump(cfg, f, sort_keys=False)
     return medians
@@ -254,8 +236,60 @@ def snapshots(real_segs_by_lab, n: int = 10) -> None:
             save_still(old.positions, old.velocities, FIG / f"sim_old_{lab}.png", title=f"sim old {lab}")
             new = run_realistic(lab, n, seed=0)
             save_still(new.positions, new.velocities, FIG / f"sim_fit_{lab}.png", title=f"sim fit {lab}")
+            if lab in ("traveling", "milling", "expansion"):
+                save_video(
+                    old.positions,
+                    old.velocities,
+                    FIG / f"sim_old_{lab}.gif",
+                    fps=12.0,
+                    stride=3,
+                    title=f"sim old {lab}",
+                    dpi=72,
+                    figsize=(5.0, 3.0),
+                )
+                save_video(
+                    new.positions,
+                    new.velocities,
+                    FIG / f"sim_fit_{lab}.gif",
+                    fps=12.0,
+                    stride=3,
+                    title=f"sim fit {lab}",
+                    dpi=72,
+                    figsize=(5.0, 3.0),
+                )
+                if segs:
+                    save_video(
+                        pos[a:b],
+                        vel[a:b],
+                        FIG / f"real_{lab}.gif",
+                        fps=12.0,
+                        stride=3,
+                        title=f"real {lab}",
+                        dpi=72,
+                        figsize=(5.0, 3.0),
+                    )
         except Exception as e:
             print(f"snapshot {lab} failed: {e}", flush=True)
+
+
+def montage(path: Path) -> None:
+    labs = list(CANONICAL)
+    cols = ("real", "sim_old", "sim_fit")
+    fig, axes = plt.subplots(len(labs), 3, figsize=(9.6, 2.15 * len(labs)))
+    for i, lab in enumerate(labs):
+        for j, col in enumerate(cols):
+            ax = axes[i, j]
+            fp = FIG / f"{col}_{lab}.png"
+            ax.axis("off")
+            if fp.exists():
+                ax.imshow(plt.imread(fp))
+            if i == 0:
+                ax.set_title({"real": "real", "sim_old": "sim (original YAML)", "sim_fit": "sim (kinematic fit)"}[col], fontsize=10)
+            if j == 0:
+                ax.set_ylabel(lab, fontsize=9)
+    fig.tight_layout()
+    fig.savefig(path, dpi=140)
+    plt.close(fig)
 
 
 def main() -> None:
@@ -288,20 +322,27 @@ def main() -> None:
             by_lab[s["label"]].append(s)
     snapshots(by_lab, n=args.n[0] if args.n else 10)
     plot_histograms(real, before, after, FIG / "sim_real_histograms.png")
+    montage(FIG / "sim_real_montage.png")
 
     report = {
         "n_values": args.n,
         "seeds": args.seeds,
+        "fit_method": "original Couzin weights+radii; s_0/sigma_s from real medians; speed-dep turn + OU noise",
         "baseline_mean_wasserstein": mean_w(before_cmp),
         "fitted_mean_wasserstein": mean_w(after_cmp),
+        "baseline_mean_ks": mean_w(before_cmp, "ks_stat"),
+        "fitted_mean_ks": mean_w(after_cmp, "ks_stat"),
+        "baseline_mean_w_over_std": mean_w(before_cmp, "wasserstein_over_std"),
+        "fitted_mean_w_over_std": mean_w(after_cmp, "wasserstein_over_std"),
         "baseline": before_cmp,
         "fitted": after_cmp,
         "fit_medians": medians,
     }
     (OUT / "sim_realism.json").write_text(json.dumps(report, indent=2) + "\n")
     print(
-        f"mean Wasserstein  baseline={report['baseline_mean_wasserstein']:.4f}  "
-        f"fitted={report['fitted_mean_wasserstein']:.4f}"
+        f"mean KS        baseline={report['baseline_mean_ks']:.4f}  fitted={report['fitted_mean_ks']:.4f}\n"
+        f"mean W/σ_real  baseline={report['baseline_mean_w_over_std']:.4f}  fitted={report['fitted_mean_w_over_std']:.4f}\n"
+        f"mean W         baseline={report['baseline_mean_wasserstein']:.4f}  fitted={report['fitted_mean_wasserstein']:.4f}"
     )
     print(f"wrote {OUT / 'sim_realism.json'}")
 
