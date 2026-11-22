@@ -10,12 +10,15 @@ Every number below comes from a script in this branch. JSON dumps live in
 
 1. With a **leakage-safe** protocol (leave-one-video-out), how well do the four
    published order parameters classify the five stable CouzinLab behaviours and
-   the transients between them?
+   the transients between them — at 10 fish **and** at 30/70/150?
 2. Which **new feature families** — physical or not — move macro-F1, especially
-   on expansion/compaction and on transients?
-3. Why do YAML simulations **not look like** the real 10-fish videos, and can a
-   kinematic retune close the gap without destroying the order-parameter
-   signatures that the YAMLs already produce?
+   on expansion/compaction and on transients? Does `dlogR` / w=15 replicate
+   when N grows, and do graph-spectral features start helping?
+3. Can transients be recovered as **change-points / sequences** (event F1 with
+   a tolerance window, plus A→B identity) better than i.i.d. windows?
+4. Why do YAML simulations **not look like** the real videos, and can a **joint**
+   Couzin calibration (CMA-ES on the KS vector) match NND and R_gyr without
+   collapsing milling?
 
 ## Data and labels (audit)
 
@@ -31,10 +34,17 @@ those frames are unlabeled, not relabeled.
 
 **Trajectory coverage in this clone.** CouzinLab H5 files are gitignored.
 Only the three **10-fish** videos (`0066`, `0105`, `0126`) were loadable
-(Drive download cap). That is **107 / 591** annotated segments,
-**13 277** non-overlapping 5-frame windows. All **188 milling windows** are in
-`0066` only, so leave-one-video-out milling F1 is structurally 0. The 30 / 70 /
-150-fish H5 files were not obtained.
+(Drive MCP download cap 10 MB; 30-fish H5s are 21 MB, 70-fish ~50 MB, 150-fish
+80 MB, and they are not publicly fetchable via gdown). Window-level 5-frame
+features therefore remain 10-fish only (**13 277** windows). All **188 milling
+windows** are in `0066`.
+
+**All-N substitute (iteration 2).** Official labels for all 10 videos were
+joined to `annotation_review/segment_review.csv` kinematics by overlap-weighted
+averaging onto the official `[start, end)` intervals. Annotations were not
+edited. 569 / 591 official segments matched. This is **segment-level**, not
+5-frame; it is the only leakage-safe protocol that currently includes 30/70/150
+fish. Graph-spectral features cannot be computed without the H5s.
 
 `annotated_config.csv` and `annotated_features.csv` cover all 10 videos
 (inverse-fitted Couzin weights and 3-Φ summaries). Those tables are used as a
@@ -229,6 +239,98 @@ Histograms: `research/figures/sim_real_histograms.png`. Per-cell table:
 Sim-to-real pretraining was not run: the remaining NND / R_gyr mismatch is
 large enough that extra sim windows would teach the wrong scale.
 
+## Iteration 2 — all group sizes (segment-level LOVO)
+
+`scripts/research_scaleup.py` → `research/results/scaleup_lovo.json`.
+Figure: `research/figures/scaleup_stable5.png`.
+
+Official stable counts in the joined table: 10-fish **65**, 30-fish **117**,
+70-fish **106**, 150-fish **33** (one video, **LOVO impossible**). Joined
+row totals including transients: 103 / 210 / 200 / 56.
+
+The 15-frame window protocol **cannot be repeated** at 30/70/150 without the
+H5s. What replicates is the **segment-level** `dlogR` add-on. The full rate
+bundle (`dlogR` + Φ slopes + `vrad_norm`) is best **pooled** (0.930) but is
+not uniformly best per N (30-fish +dlogR 0.859 > +rate 0.853; 70-fish
+0.912 > 0.901).
+
+### Stable 5-class macro-F1 (segment-level LOVO)
+
+| Split | n stable | videos | 4 Φ | **+dlogR** | +rate | physical |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| **Pooled (10 videos)** | 321 | 10 | 0.865 | **0.898** | **0.930** | 0.919 |
+| 10-fish | 65 | 3 | 0.661 | **0.702** | 0.678 | 0.634 |
+| 30-fish | 117 | 3 | 0.831 | **0.859** | 0.853 | 0.852 |
+| 70-fish | 106 | 3 | 0.870 | **0.912** | 0.901 | 0.857 |
+| 150-fish | 33 | 1 | — | — | — | skipped |
+
+Pooled per-class F1 (4 Φ → +rate): traveling 0.92→0.95, milling 0.92→0.97,
+shoaling 0.90→0.95, expansion **0.74→0.86**, compaction 0.84→0.91.
+
+**`dlogR` replicates at 30- and 70-fish.** Expansion F1 at 30-fish 0.77→0.81;
+at 70-fish 0.81→0.89. Milling is usable once more than one video contains it
+(30-fish milling F1 0.88; 70-fish 0.87→0.93). The 10-fish milling F1 remains 0
+under LOVO.
+
+These numbers are **much higher than 5-frame windows** because a whole segment
+is one sample: Φ and dlogR are averaged over seconds, not 0.17 s. They answer
+“does dlogR still help when N grows?”, not “replace the 5-frame classifier
+with 0.93”.
+
+Pooled coarse-6 **transient F1**: 4 Φ 0.651 → +dlogR 0.772 → +rate **0.835**.
+Same caveat: segment-level.
+
+Permutation (pooled +dlogR): Φ_trans 0.223, Φ_tan 0.160, Φ_rad± 0.118,
+Φ_local 0.083, **dlogR 0.033**. The F1 gain is real; dlogR is partly collinear
+with Φ_rad± at segment scale (less so at 5-frame scale, where it ranked 2nd).
+
+**Graph-spectral / other non-physical families at large N:** not measured.
+The H5s were not on disk. Do not generalize the N=10 spectral negative.
+
+## Iteration 2 — transients as sequences (10-fish)
+
+`scripts/research_sequences.py` → `research/results/sequences.json`.
+Tolerance ±45 frames (~1.5 s). 38 official A→B events across 3 videos.
+
+| Detector | event P | event R | event F1 | A→B identity among TP | stable-window macro-F1 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| i.i.d. 5-frame XGB (windows as events) | 0.126 | 0.816 | **0.218** | 0.194 | 0.396 (stable subset of finegrained) |
+| Supervised 5-state Gaussian HMM | 0.080 | 0.868 | 0.146 | 0.242 | 0.440 |
+| CUSUM + nearest centroid | 0.146 | 0.342 | 0.205 | 0.308 | 0.397 |
+
+HMM **over-fires** (415 predicted changes vs 38 true). CUSUM is more precise
+but misses most morphs. Neither beats turning i.i.d. window predictions into
+change events. Sequence models are **not** paper-ready on 10-fish alone.
+
+## Iteration 2 — joint CMA-ES calibration
+
+`scripts/research_cma_fit.py` (popsize 6, 8 iterations, 2 seeds/eval, 11
+logit-constrained parameters including radii, `s_0`, `w_o`, `w_tan`, `w_rad`,
+noise). Configs: `configs/behaviors_cma/` (does not overwrite `behaviors_fit/`).
+Montage: `research/figures/sim_cma_montage.png`. Mean KS on a 6-seed holdout:
+
+| | original YAML | speed-matched fit | **CMA-ES** |
+| --- | ---: | ---: | ---: |
+| mean KS | **0.474** | **0.439** | 0.509 |
+| NND KS | 0.754 | 0.699 | **0.685** |
+| R_gyr KS | 0.788 | 0.770 | **0.681** |
+| speed KS | 0.858 | **0.439** | 0.879 |
+| traveling Φ_trans KS | 0.549 | 0.181 | **0.136** |
+| milling M (real 0.73) | 0.72 | 0.38 | 0.89 |
+| compaction NND (real 47) | 18 | 15 | **8.5 (collapsed)** |
+
+CMA moved traveling NND 23→34 (real 55) and R_gyr 42→71 (real 104) and kept a
+mill, but **did not beat** the simple speed match on overall KS, and
+compaction imploded. An 8-iteration 2-seed CMA is underpowered for this
+11-D landscape. The scientific point stands: **speed and interaction scale
+are not independently identifiable**; sequential MLE or radius scaling fails,
+and a short CMA run is not a substitute for a long, constraint-heavy search.
+
+Default `configs/behaviors_fit/` remains the speed-matched YAMLs (better
+overall KS). CMA dumps and stills stay in `configs/behaviors_cma/` and
+`research/figures/sim_cma_*`. Speed-match stills remain `sim_fit_*` /
+`sim_real_montage.png`.
+
 ## Annotation notes (not edited)
 
 - README still says compaction has no real labels; the current CSVs have 54
@@ -246,31 +348,31 @@ large enough that extra sim windows would teach the wrong scale.
 python scripts/research_audit.py
 python scripts/research_features.py --window 5 --hop 5
 python scripts/research_features.py --window 15 --hop 5
+python scripts/research_scaleup.py
+python scripts/research_sequences.py
 python scripts/research_sim_realism.py --seeds 6 --n 10
+python scripts/research_cma_fit.py --maxiter 8 --popsize 6
 python scripts/research_plots.py
 ```
 
-Original training / eval CLIs are unchanged. Fitted YAMLs are only read by
-`src.sim.realistic.run_realistic`.
+Original training / eval CLIs are unchanged. Speed-matched YAMLs live in
+`configs/behaviors_fit/` (read by `run_realistic`). CMA YAMLs are
+`configs/behaviors_cma/` only.
 
-## Recommended next steps (paper)
+## Verdict — what is paper-worthy
 
-1. **`dlogR` as the missing physical coordinate for E+ / E−.** Pair Φ_trans,
-   Φ_rad±, and d log R / dt in a 3-D phase portrait on all group sizes (need
-   the 30/70/150-fish H5). That is a small, non-trivial physical finding and
-   the only family that moved expansion F1 by a large margin.
-2. **Transients as change-points, not extra classes.** Binary / 20-way window
-   classification failed. A hidden Markov or CUSUM detector on
-   (Φ_trans, dlogR), trained leave-one-video-out, matches how the labels were
-   drawn (morphs between stables) and uses the 248 transient segments as
-   event times rather than i.i.d. windows.
-3. **Joint Couzin calibration, not sequential.** Window MLE weights are not
-   generative; scaling radii independently kills milling. Fit
-   `(s_0, r_r, w_o, w_tan, w_rad, σ_θ)` by CMA-ES on the vector of KS
-   statistics (speed, NND, Φ_trans, M, Φ_rad±, R_gyr). Then test whether the
-   resulting clips help real-data training (sim-to-real) — they will not,
-   until NND and R_gyr match.
-
-Secondary, after the 30-fish H5 is local: re-run spectral / TDA families. At
-N = 10 the interaction graph is too small for λ₂ to beat Φ_trans; that
-negative result should not be generalized to 70–150 fish.
+1. **Yes: `dlogR` (non-trivial physical).** It is the only add-on that moved
+   expansion F1 at 5-frame 10-fish (0.457→0.618 at w=15) **and** still helped
+   at 30-fish (0.831→0.859) and 70-fish (0.870→0.912) under grouped CV on
+   official segments. Write the 3-D (Φ_trans, Φ_rad±, dlogR) phase portrait
+   once the 30/70/150 H5s are local so the 5-frame protocol can be repeated
+   at large N. Graph-spectral features remain a **large-N experiment**, not a
+   result.
+2. **Not yet: sequence / HMM transients.** Event F1 ≤ 0.22, HMM floods false
+   alarms (415 vs 38). Try again with 30/70-fish per-frame tracks and a
+   duration-aware HSMM; do not write this as a method paper on 10-fish.
+3. **Not yet: CMA Couzin clones.** Short CMA lost to a one-line `s_0` match
+   on mean KS and collapsed compaction. The **negative** result (MLE weights
+   and independent radius scaling are not generative) is worth a paragraph
+   in a methods/supplement; a realistic generator needs a longer constrained
+   search and the large-N H5s for NND/R_gyr targets.

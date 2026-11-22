@@ -75,7 +75,7 @@ class RealisticSchoolSimulator(FastSchoolSimulator):
         self.frame += 1
 
 
-def _load(behavior: str, overrides: dict | None = None) -> dict:
+def _load(behavior: str, overrides: dict | None = None, *, prefer_fit: bool = True) -> dict:
     from src.labels import BEHAVIOR_SHORT
 
     short = BEHAVIOR_SHORT.get(behavior, behavior)
@@ -85,7 +85,7 @@ def _load(behavior: str, overrides: dict | None = None) -> dict:
     from src.sim.config import CONFIG_DIR, DEFAULTS, deep_merge as dm
 
     fit = Path(CONFIG_DIR).parent / "behaviors_fit" / f"{short}.yaml"
-    src = fit if fit.exists() else (CONFIG_DIR / f"{short}.yaml")
+    src = fit if (prefer_fit and fit.exists()) else (CONFIG_DIR / f"{short}.yaml")
     import yaml
 
     with open(src, encoding="utf-8") as f:
@@ -105,13 +105,14 @@ def run_realistic(
     overrides: dict | None = None,
     *,
     init_from: str | None = None,
+    prefer_fit: bool = True,
 ) -> SimResult:
-    cfg = _load(behavior, overrides)
+    cfg = _load(behavior, overrides, prefer_fit=prefer_fit)
     init_from = init_from or cfg.get("init_from")
     burn = int(cfg["burn_in"])
     T = int(cfg["record_frames"])
     if init_from:
-        cfg_init = _load(str(init_from), None)
+        cfg_init = _load(str(init_from), None, prefer_fit=prefer_fit)
         for k in ("half_extent_x", "half_extent_y"):
             cfg_init["arena"][k] = cfg["arena"][k]
         cfg_init["burn_in"] = burn

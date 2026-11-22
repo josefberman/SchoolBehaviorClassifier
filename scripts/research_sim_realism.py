@@ -210,9 +210,18 @@ def plot_histograms(real, before, after, path: Path) -> None:
     plt.close(fig)
 
 
-def snapshots(real_segs_by_lab, n: int = 10) -> None:
+def snapshots(
+    real_segs_by_lab,
+    n: int = 10,
+    *,
+    fit_prefix: str = "sim_fit",
+    fit_title: str = "sim fit",
+    run_fit=None,
+) -> None:
     FIG.mkdir(parents=True, exist_ok=True)
     loaded = {}
+    if run_fit is None:
+        run_fit = lambda lab, n, seed: run_realistic(lab, n, seed)
     for lab in CANONICAL:
         # real snapshot: longest available segment
         segs = real_segs_by_lab.get(lab, [])
@@ -234,8 +243,8 @@ def snapshots(real_segs_by_lab, n: int = 10) -> None:
         try:
             old = run_simulation_fast(lab, n, seed=0)
             save_still(old.positions, old.velocities, FIG / f"sim_old_{lab}.png", title=f"sim old {lab}")
-            new = run_realistic(lab, n, seed=0)
-            save_still(new.positions, new.velocities, FIG / f"sim_fit_{lab}.png", title=f"sim fit {lab}")
+            new = run_fit(lab, n, 0)
+            save_still(new.positions, new.velocities, FIG / f"{fit_prefix}_{lab}.png", title=f"{fit_title} {lab}")
             if lab in ("traveling", "milling", "expansion"):
                 save_video(
                     old.positions,
@@ -250,10 +259,10 @@ def snapshots(real_segs_by_lab, n: int = 10) -> None:
                 save_video(
                     new.positions,
                     new.velocities,
-                    FIG / f"sim_fit_{lab}.gif",
+                    FIG / f"{fit_prefix}_{lab}.gif",
                     fps=12.0,
                     stride=3,
-                    title=f"sim fit {lab}",
+                    title=f"{fit_title} {lab}",
                     dpi=72,
                     figsize=(5.0, 3.0),
                 )
@@ -272,10 +281,21 @@ def snapshots(real_segs_by_lab, n: int = 10) -> None:
             print(f"snapshot {lab} failed: {e}", flush=True)
 
 
-def montage(path: Path) -> None:
+def montage(
+    path: Path,
+    cols: tuple[str, ...] = ("real", "sim_old", "sim_fit"),
+    titles: dict[str, str] | None = None,
+) -> None:
     labs = list(CANONICAL)
-    cols = ("real", "sim_old", "sim_fit")
-    fig, axes = plt.subplots(len(labs), 3, figsize=(9.6, 2.15 * len(labs)))
+    titles = titles or {
+        "real": "real",
+        "sim_old": "sim (original YAML)",
+        "sim_fit": "sim (kinematic fit)",
+        "sim_cma": "sim (CMA-ES)",
+    }
+    fig, axes = plt.subplots(len(labs), len(cols), figsize=(3.2 * len(cols), 2.15 * len(labs)))
+    if len(cols) == 1:
+        axes = np.array(axes).reshape(len(labs), 1)
     for i, lab in enumerate(labs):
         for j, col in enumerate(cols):
             ax = axes[i, j]
@@ -284,7 +304,7 @@ def montage(path: Path) -> None:
             if fp.exists():
                 ax.imshow(plt.imread(fp))
             if i == 0:
-                ax.set_title({"real": "real", "sim_old": "sim (original YAML)", "sim_fit": "sim (kinematic fit)"}[col], fontsize=10)
+                ax.set_title(titles.get(col, col), fontsize=10)
             if j == 0:
                 ax.set_ylabel(lab, fontsize=9)
     fig.tight_layout()

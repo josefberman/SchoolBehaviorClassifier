@@ -204,6 +204,53 @@ def load_real_segments(
                     "end": end,
                     "label": label,
                     "fps": fps,
+                    "group": group,
+                }
+            )
+    return out
+
+
+def load_official_segments(
+    annotations_dir: Path | None = None,
+    datasets_json: Path | None = None,
+) -> list[dict]:
+    """All annotated segments, including videos whose trajectories are not on disk."""
+    annotations_dir = annotations_dir or (ROOT / "annotations")
+    datasets_json = datasets_json or (annotations_dir / "datasets.json")
+    with open(datasets_json, encoding="utf-8") as f:
+        meta = json.load(f)
+    aliases = load_aliases()
+    out = []
+    for path in sorted(annotations_dir.glob("*_motion.json")):
+        if path.name.startswith("_"):
+            continue
+        ann = load_motion_json(path)
+        ds = ann["dataset"]
+        if ds not in meta:
+            continue
+        fps = float(ann.get("fps", meta[ds]["fps"]))
+        group = meta[ds]["fish_group"]
+        traj = _first_existing_trajectory(ROOT / "schooling-datasets" / group / ds, ds)
+        for i, seg in enumerate(ann["segments"]):
+            try:
+                label = canonicalize(seg["label"], aliases)
+            except ValueError:
+                continue
+            start = mmss_to_frame(seg["start"], fps)
+            end = mmss_to_frame(seg["end"], fps)
+            if end <= start:
+                continue
+            out.append(
+                {
+                    "dataset": ds,
+                    "seg": i,
+                    "csv": str(traj.relative_to(ROOT)) if traj is not None else None,
+                    "start": start,
+                    "end": end,
+                    "label": label,
+                    "fps": fps,
+                    "group": group,
+                    "has_trajectory": traj is not None,
                 }
             )
     return out
