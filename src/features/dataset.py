@@ -17,9 +17,32 @@ from src.features.windows import (
     sliding_window_features,
 )
 from src.labels import canonicalize, is_transition, label_set, load_aliases
-from src.sim.io import load_motion_json, load_trajectory_csv, mmss_to_frame
+from src.sim.io import (
+    load_motion_json,
+    load_trajectory_csv,
+    load_trajectory_table,
+    mmss_to_frame,
+    pos_vel_from_table,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _first_existing_trajectory(folder: Path, dataset: str) -> Path | None:
+    """Prefer CSV (original path), then HDF5 used by CouzinLab exports."""
+    for suffix in (".csv", ".h5", ".hdf5"):
+        path = folder / f"{dataset}_loc_vel_data{suffix}"
+        if path.exists():
+            return path
+    return None
+
+
+def load_positions_velocities(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    """Load (T, N, 2) positions and velocities from CSV or HDF5."""
+    path = Path(path)
+    if path.suffix.lower() in {".h5", ".hdf5"}:
+        return pos_vel_from_table(load_trajectory_table(path))
+    return load_trajectory_csv(path)
 
 
 def load_manifest(path: Path | None = None) -> list[dict]:
@@ -161,8 +184,8 @@ def load_real_segments(
             continue
         fps = float(ann.get("fps", meta[ds]["fps"]))
         group = meta[ds]["fish_group"]
-        csv = ROOT / "schooling-datasets" / group / ds / f"{ds}_loc_vel_data.csv"
-        if not csv.exists():
+        traj = _first_existing_trajectory(ROOT / "schooling-datasets" / group / ds, ds)
+        if traj is None:
             continue
         for seg in ann["segments"]:
             try:
@@ -176,7 +199,7 @@ def load_real_segments(
             out.append(
                 {
                     "dataset": ds,
-                    "csv": str(csv.relative_to(ROOT)),
+                    "csv": str(traj.relative_to(ROOT)),
                     "start": start,
                     "end": end,
                     "label": label,
@@ -200,7 +223,7 @@ def build_real_xy(
         segs = [s for s in segs if not is_transition(s["label"])]
     xs, ys, kept = [], [], []
     for s in segs:
-        pos, vel = load_trajectory_csv(ROOT / s["csv"])
+        pos, vel = load_positions_velocities(ROOT / s["csv"])
         a, b = s["start"], min(s["end"], pos.shape[0])
         if b - a < min_frames:
             continue
