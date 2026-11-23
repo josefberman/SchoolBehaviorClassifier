@@ -34,6 +34,7 @@ from src.sim.realistic import run_realistic
 OUT = ROOT / "research" / "results"
 FIG = ROOT / "research" / "figures"
 CMA_DIR = ROOT / "configs" / "behaviors_cma"
+FIT_DIR = ROOT / "configs" / "behaviors_fit"
 
 # Decision variables (unconstrained CMA space → positive via exp/clip).
 # order: s_0, r_r, gap_o, gap_a, w_o, w_tan, w_rad, sigma_theta, omega_max, w_r, sigma_s
@@ -140,25 +141,50 @@ def _objective(lab: str, z, real_lab: dict, seeds: int, n: int) -> float:
     loss = float(np.mean([ks[k] for k in core]))
     nnd = float(np.nanmean(sim["nnd"])) if sim["nnd"].size else 1e9
     R = float(np.nanmean(sim["R_gyr"])) if sim["R_gyr"].size else 1e9
+    real_nnd = float(np.nanmean(real_lab.get("nnd", [np.nan])))
+    real_R = float(np.nanmean(real_lab.get("R_gyr", [np.nan])))
     if nnd > 220 or R > 480 or nnd < 8:
+        loss += 2.5
+    if np.isfinite(real_nnd) and nnd < 0.40 * real_nnd:
+        loss += 3.5
+    if np.isfinite(real_R) and R < 0.40 * real_R:
         loss += 2.5
     if lab == "milling":
         M = float(np.nanmean(sim["M"])) if sim["M"].size else 0.0
-        loss += 1.8 * max(0.0, 0.50 - M)
+        loss += 2.2 * max(0.0, 0.55 - M)
     if lab == "expansion":
         pr = float(np.nanmean(sim["phi_rad_pm"])) if sim["phi_rad_pm"].size else 0.0
         loss += 1.2 * max(0.0, 0.15 - pr)
     if lab == "compaction":
         pr = float(np.nanmean(sim["phi_rad_pm"])) if sim["phi_rad_pm"].size else 0.0
         loss += 1.2 * max(0.0, pr + 0.12)
+        if nnd < 22:
+            loss += 4.0
+        if nnd < 30:
+            loss += 1.5
     if lab == "traveling":
         pt = float(np.nanmean(sim["phi_trans"])) if sim["phi_trans"].size else 0.0
         loss += 1.0 * max(0.0, 0.70 - pt)
+        if nnd < 28:
+            loss += 1.8
     return float(loss)
 
 
-def fit_label(lab: str, real_lab: dict, seeds: int, n: int, maxiter: int, popsize: int) -> dict:
-    with open(CONFIG_DIR / f"{BEHAVIOR_SHORT[lab]}.yaml", encoding="utf-8") as f:
+def fit_label(
+    lab: str,
+    real_lab: dict,
+    seeds: int,
+    n: int,
+    maxiter: int,
+    popsize: int,
+    *,
+    init_from_fit: bool = False,
+) -> dict:
+    src = CONFIG_DIR / f"{BEHAVIOR_SHORT[lab]}.yaml"
+    fit_src = FIT_DIR / f"{BEHAVIOR_SHORT[lab]}.yaml"
+    if init_from_fit and fit_src.exists():
+        src = fit_src
+    with open(src, encoding="utf-8") as f:
         orig = yaml.safe_load(f) or {}
     x0 = _encode_from_yaml(orig)
     es = cma.CMAEvolutionStrategy(
@@ -190,9 +216,14 @@ def main() -> None:
     p.add_argument("--n", type=int, default=10)
     p.add_argument("--maxiter", type=int, default=10)
     p.add_argument("--popsize", type=int, default=8)
+    p.add_argument("--init-from-fit", action="store_true")
+    p.add_argument("--config-dir", type=str, default="")
+    p.add_argument("--tag", type=str, default="cma")
     args = p.parse_args()
+    cfg_dir = Path(args.config_dir) if args.config_dir else CMA_DIR
     OUT.mkdir(parents=True, exist_ok=True)
-    CMA_DIR.mkdir(parents=True, exist_ok=True)
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    prefix = "sim_cma" if args.tag == "cma" else f"sim_{args.tag}"
 
     print("pooling real…", flush=True)
     real = real_pools()
@@ -202,9 +233,17 @@ def main() -> None:
         print(f"CMA-ES {lab}", flush=True)
         if lab not in real:
             continue
-        fits[lab] = fit_label(lab, real[lab], args.seeds, args.n, args.maxiter, args.popsize)
+        fits[lab] = fit_label(
+            lab,
+            real[lab],
+            args.seeds,
+            args.n,
+            args.maxiter,
+            args.popsize,
+            init_from_fit=args.init_from_fit,
+        )
         short = BEHAVIOR_SHORT[lab]
-        with open(CMA_DIR / f"{short}.yaml", "w", encoding="utf-8") as f:
+        with open(cfg_dir / f"{short}.yaml", "w", encoding="utf-8") as f:
             yaml.safe_dump(fits[lab]["cfg"], f, sort_keys=False)
 
     print("baseline sims…", flush=True)
@@ -212,7 +251,7 @@ def main() -> None:
 
     def _run_cma(lab: str, n: int, seed: int):
         short = BEHAVIOR_SHORT[lab]
-        with open(CMA_DIR / f"{short}.yaml", encoding="utf-8") as f:
+        with open(cfg_dir / f"{short}.yaml", encoding="utf-8") as f:
             ov = yaml.safe_load(f) or {}
         return run_realistic(lab, n, seed, overrides=ov, prefer_fit=False)
 
@@ -238,23 +277,25 @@ def main() -> None:
     segs = load_real_segments()
     by_lab = defaultdict(list)
     for s in segs:
+        if s.get("group") not in (None, "10_fish"):
+            continue
         if not is_transition(s["label"]):
             by_lab[s["label"]].append(s)
     snapshots(
         by_lab,
         n=args.n,
-        fit_prefix="sim_cma",
-        fit_title="sim CMA",
+        fit_prefix=prefix,
+        fit_title=f"sim {args.tag}",
         run_fit=_run_cma,
     )
-    plot_histograms(real, before, after, FIG / "sim_cma_histograms.png")
+    plot_histograms(real, before, after, FIG / f"{prefix}_histograms.png")
     montage(
-        FIG / "sim_cma_montage.png",
-        cols=("real", "sim_old", "sim_cma"),
+        FIG / f"{prefix}_montage.png",
+        cols=("real", "sim_old", prefix),
         titles={
             "real": "real",
             "sim_old": "sim (original YAML)",
-            "sim_cma": "sim (CMA-ES)",
+            prefix: f"sim ({args.tag})",
         },
     )
 
@@ -264,6 +305,8 @@ def main() -> None:
         "cma_seeds_per_eval": args.seeds,
         "maxiter": args.maxiter,
         "popsize": args.popsize,
+        "init_from_fit": bool(args.init_from_fit),
+        "config_dir": str(cfg_dir),
         "fits": {k: {"loss": v["loss"], "n_evals": v["n_evals"], "cfg": v["cfg"], "history": v["history"]} for k, v in fits.items()},
         "baseline_mean_ks": mean_w(before_cmp, "ks_stat"),
         "cma_mean_ks": mean_w(after_cmp, "ks_stat"),
@@ -272,7 +315,8 @@ def main() -> None:
         "baseline": before_cmp,
         "cma": after_cmp,
     }
-    (OUT / "cma_fit.json").write_text(json.dumps(report, indent=2) + "\n")
+    out_json = OUT / ("cma_fit.json" if args.tag == "cma" else f"{args.tag}_fit.json")
+    out_json.write_text(json.dumps(report, indent=2) + "\n")
     print(
         f"mean KS  baseline={report['baseline_mean_ks']:.4f}  CMA={report['cma_mean_ks']:.4f}",
         flush=True,

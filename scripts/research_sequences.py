@@ -228,7 +228,11 @@ def main() -> None:
         },
         "iid_window_as_events": _sum_match(iid_events),
     }
-    (OUT / "sequences.json").write_text(json.dumps(out, indent=2) + "\n")
+    out["n_videos"] = len(videos)
+    out["n_fish"] = {ds: int(loaded[ds][0].shape[1]) for ds in videos}
+    dest = OUT / ("sequences_all.json" if len(videos) > 3 else "sequences.json")
+    dest.write_text(json.dumps(out, indent=2) + "\n")
+    print("wrote", dest, flush=True)
     print(
         f"HMM event F1={out['hmm']['events']['f1']:.3f}  "
         f"CUSUM={out['cusum']['events']['f1']:.3f}  "

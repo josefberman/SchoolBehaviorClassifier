@@ -51,12 +51,15 @@ def _series_pool(pos, vel) -> dict[str, np.ndarray]:
     return {k: np.asarray(s[k], dtype=np.float64) for k in STAT_KEYS if k in s}
 
 
-def real_pools() -> dict[str, dict[str, np.ndarray]]:
+def real_pools(groups: tuple[str, ...] | None = ("10_fish",)) -> dict[str, dict[str, np.ndarray]]:
+    """Pool real annotated frames. Default 10-fish so N=10 sims are comparable."""
     segs = load_real_segments()
     loaded = {}
     buckets: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
     for s in segs:
         if is_transition(s["label"]):
+            continue
+        if groups is not None and s.get("group") not in groups:
             continue
         key = s["csv"]
         if key not in loaded:

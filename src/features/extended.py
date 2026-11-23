@@ -63,6 +63,12 @@ SPECTRAL_WINDOW_NAMES = (
     "lambda2_metric",
     "gap_metric",
     "n_components_metric",
+    "lambda2_delaunay",
+    "gap_delaunay",
+    "n_components_r50",
+    "n_components_r100",
+    "n_components_r200",
+    "dlambda2_knn",
 )
 CORR_WINDOW_NAMES = ("corr_length", "susceptibility")
 EARLY_WINDOW_NAMES = ("phi_trans_ac1",)
@@ -338,15 +344,39 @@ def _pairwise_frame_features(
     return phi_local, nnd, abs_vort, diverg, front_back
 
 
-def _graph_spectrum(pos: np.ndarray, valid: np.ndarray, *, k: int = 5, radius: float | None = None) -> tuple[float, float, float]:
+def _spectrum_from_adj(adj: np.ndarray) -> tuple[float, float, float]:
+    m = adj.shape[0]
+    if m < 3:
+        return np.nan, np.nan, np.nan
+    np.fill_diagonal(adj, 0.0)
+    deg = adj.sum(axis=1)
+    L = np.diag(deg) - adj
+    evals = np.sort(np.real(np.linalg.eigvalsh(L)))
+    lam2 = float(evals[1]) if evals.size > 1 else np.nan
+    gap = float(evals[2] - evals[1]) if evals.size > 2 else np.nan
+    n_comp = float(np.sum(evals < 1e-8))
+    return lam2, gap, n_comp
+
+
+def _graph_spectrum(
+    pos: np.ndarray,
+    valid: np.ndarray,
+    *,
+    k: int = 5,
+    radius: float | None = None,
+    dist: np.ndarray | None = None,
+) -> tuple[float, float, float]:
     """λ2, spectral gap, connected-component count for one frame."""
     idx = np.flatnonzero(valid)
     m = int(idx.size)
     if m < 3:
         return np.nan, np.nan, np.nan
-    xy = pos[idx]
-    d = np.linalg.norm(xy[:, None, :] - xy[None, :, :], axis=-1)
-    np.fill_diagonal(d, np.inf)
+    if dist is None:
+        xy = pos[idx]
+        d = np.linalg.norm(xy[:, None, :] - xy[None, :, :], axis=-1)
+        np.fill_diagonal(d, np.inf)
+    else:
+        d = dist
     adj = np.zeros((m, m), dtype=np.float64)
     if radius is not None:
         adj[d <= radius] = 1.0
@@ -356,15 +386,39 @@ def _graph_spectrum(pos: np.ndarray, valid: np.ndarray, *, k: int = 5, radius: f
         rows = np.repeat(np.arange(m), kk)
         adj[rows, nn.ravel()] = 1.0
         adj = np.maximum(adj, adj.T)
-    np.fill_diagonal(adj, 0.0)
-    deg = adj.sum(axis=1)
-    L = np.diag(deg) - adj
-    evals = np.linalg.eigvalsh(L)
-    evals = np.sort(np.real(evals))
-    lam2 = float(evals[1]) if evals.size > 1 else np.nan
-    gap = float(evals[2] - evals[1]) if evals.size > 2 else np.nan
-    n_comp = float(np.sum(evals < 1e-8))
-    return lam2, gap, n_comp
+    return _spectrum_from_adj(adj)
+
+
+def _delaunay_spectrum(pos: np.ndarray, valid: np.ndarray) -> tuple[float, float, float]:
+    """Laplacian spectrum of the Delaunay / Voronoi adjacency graph."""
+    idx = np.flatnonzero(valid)
+    m = int(idx.size)
+    if m < 4:
+        return np.nan, np.nan, np.nan
+    xy = np.asarray(pos[idx], dtype=np.float64)
+    try:
+        from scipy.spatial import Delaunay
+
+        tri = Delaunay(xy)
+    except Exception:
+        return np.nan, np.nan, np.nan
+    adj = np.zeros((m, m), dtype=np.float64)
+    simplices = np.asarray(tri.simplices)
+    if simplices.size == 0:
+        return np.nan, np.nan, np.nan
+    for a, b in ((0, 1), (1, 2), (2, 0)):
+        i, j = simplices[:, a], simplices[:, b]
+        adj[i, j] = 1.0
+        adj[j, i] = 1.0
+    return _spectrum_from_adj(adj)
+
+
+def _pairwise_dist(pos: np.ndarray, valid: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    idx = np.flatnonzero(valid)
+    xy = np.asarray(pos[idx], dtype=np.float64)
+    d = np.linalg.norm(xy[:, None, :] - xy[None, :, :], axis=-1)
+    np.fill_diagonal(d, np.inf)
+    return d, idx
 
 
 def _corr_length(pos: np.ndarray, vel: np.ndarray, valid: np.ndarray, n_bins: int = 8) -> tuple[float, float]:
@@ -460,14 +514,30 @@ def window_feature_dict(
     pos = np.asarray(positions, dtype=np.float64)
     vel = np.asarray(velocities, dtype=np.float64)
     valid = np.isfinite(pos[mid]).all(axis=-1) & np.isfinite(vel[mid]).all(axis=-1)
-    l2k, gk, _ = _graph_spectrum(pos[mid], valid, k=5)
-    l2m, gm, nc = _graph_spectrum(pos[mid], valid, radius=150.0)
+    dist, _ = _pairwise_dist(pos[mid], valid)
+    l2k, gk, _ = _graph_spectrum(pos[mid], valid, k=5, dist=dist)
+    l2m, gm, nc = _graph_spectrum(pos[mid], valid, radius=150.0, dist=dist)
+    _, _, nc50 = _graph_spectrum(pos[mid], valid, radius=50.0, dist=dist)
+    _, _, nc100 = _graph_spectrum(pos[mid], valid, radius=100.0, dist=dist)
+    _, _, nc200 = _graph_spectrum(pos[mid], valid, radius=200.0, dist=dist)
+    l2d, gd, _ = _delaunay_spectrum(pos[mid], valid)
     clen, chi = _corr_length(pos[mid], vel[mid], valid)
     feat["lambda2_knn"] = l2k
     feat["gap_knn"] = gk
     feat["lambda2_metric"] = l2m
     feat["gap_metric"] = gm
     feat["n_components_metric"] = nc
+    feat["lambda2_delaunay"] = l2d
+    feat["gap_delaunay"] = gd
+    feat["n_components_r50"] = nc50
+    feat["n_components_r100"] = nc100
+    feat["n_components_r200"] = nc200
+    i0, i1 = start, max(start, end - 1)
+    v0 = np.isfinite(pos[i0]).all(axis=-1) & np.isfinite(vel[i0]).all(axis=-1)
+    v1 = np.isfinite(pos[i1]).all(axis=-1) & np.isfinite(vel[i1]).all(axis=-1)
+    l2_0, _, _ = _graph_spectrum(pos[i0], v0, k=5)
+    l2_1, _, _ = _graph_spectrum(pos[i1], v1, k=5)
+    feat["dlambda2_knn"] = float(abs(l2_1 - l2_0)) if np.isfinite(l2_0) and np.isfinite(l2_1) else np.nan
     feat["corr_length"] = clen
     feat["susceptibility"] = chi
     feat["phi_trans_ac1"] = _lag1_ac(series["phi_trans"][start:end])
@@ -489,12 +559,14 @@ def extract_windows(
     window_frames: int = 5,
     hop_frames: int = 5,
     names: list[str] | None = None,
+    series: dict[str, np.ndarray] | None = None,
 ) -> tuple[np.ndarray, list[str], list[tuple[int, int]]]:
     names = names or all_window_feature_names()
     bounds = iter_bounds(positions.shape[0], window_frames, hop_frames)
     if not bounds:
         return np.zeros((0, len(names))), names, []
-    series = compute_extended_series(positions, velocities)
+    if series is None:
+        series = compute_extended_series(positions, velocities)
     rows = []
     for a, b in bounds:
         feat = window_feature_dict(series, positions, velocities, a, b)
