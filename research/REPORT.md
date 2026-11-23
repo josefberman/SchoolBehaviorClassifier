@@ -458,6 +458,25 @@ Closer kinematics transfer better in this matched protocol. Absolute F1 is
 still well below real-data LOVO (0.80) because 720–1200 sim windows and a
 4 Φ feature set are thin.
 
+## Iteration 4 — operator-theoretic features (unscaled kNN)
+
+Dedicated write-up: [`research/OPERATOR_REPORT.md`](OPERATOR_REPORT.md).
+Extractor: `src/features/operator.py`. Eval: `scripts/research_operator.py`.
+Delaunay is gone. Distances and velocities are **not** divided by median NND.
+\(k\) was swept at segment-level grouped LOVO then frozen at **\(k=8\)**.
+
+Pooled stable5 macro-F1, same windows/splits as iteration 3:
+
+| Scale | n | 4 Φ | physical | Hodge | **operator** | op+phys |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| segment (591 clips) | 343 | 0.929 | **0.960** | 0.644 | 0.823 | 0.952 |
+| w=15 | 34 968 | 0.734 | **0.820** | 0.538 | 0.655 | 0.818 |
+| w=5 | 35 654 | 0.715 | **0.801** | 0.536 | 0.619 | 0.801 |
+
+Operator does **not** beat 4 Φ. Signed Hodge radial flux + `dyn_dlog_ell`
+are the features that matter (permutation). \(k\)-sweep pooled: 0.753 (k=3)
+→ **0.823 (k=8)** → 0.820 (k=9). Nested LOVO preferred k=9 in 6/10 videos.
+
 ## Reproduce
 
 ```bash
@@ -473,6 +492,8 @@ python scripts/research_sim_realism.py --seeds 6 --n 10
 python scripts/research_cma_fit.py --maxiter 20 --popsize 12 --seeds 3 --init-from-fit --config-dir configs/behaviors_cma_long --tag cma_long
 python scripts/research_sim2real.py
 python scripts/research_plots.py
+python scripts/research_operator.py --scale ksweep
+python scripts/research_operator.py --scale all --skip-ksweep
 ```
 
 Original training / eval CLIs are unchanged. Speed-matched YAMLs:
@@ -498,3 +519,10 @@ Original training / eval CLIs are unchanged. Speed-matched YAMLs:
 4. **Not yet: transients as sequences.** All-N HMM event F1 0.233 vs i.i.d.
    0.224, 1264 predicted vs 248 true. Superclass F1 0.36 → 0.52 is real but
    A→B identity is not. Needs an HSMM / duration model, not another XGB.
+5. **Not a Φ replacement: unscaled operator features.** Full write-up
+   `research/OPERATOR_REPORT.md`. Domain-agnostic kNN + signed Hodge + DMD
+   reaches 0.823 / 0.655 / 0.619 (segment / w=15 / w=5) vs 4 Φ 0.929 /
+   0.734 / 0.715. The useful coordinates are `hodge_rad_*` and
+   `dyn_dlog_ell` — the operator twins of \(\Phi_{\mathrm{rad}}\) and
+   dlogR — not Laplacian \(\lambda_2\) and not short-window Koopman.
+   Methods note: **do not NND-scale** if expansion/compaction matter.

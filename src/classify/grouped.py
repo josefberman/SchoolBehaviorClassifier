@@ -65,6 +65,41 @@ def _logreg() -> Pipeline:
     )
 
 
+def _mlp() -> Pipeline:
+    from sklearn.neural_network import MLPClassifier
+
+    return Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            (
+                "clf",
+                MLPClassifier(
+                    hidden_layer_sizes=(64, 32),
+                    activation="relu",
+                    alpha=1e-3,
+                    max_iter=200,
+                    random_state=42,
+                    early_stopping=True,
+                    n_iter_no_change=10,
+                ),
+            ),
+        ]
+    )
+
+
+def _hgb():
+    from sklearn.ensemble import HistGradientBoostingClassifier
+
+    return HistGradientBoostingClassifier(
+        max_depth=4,
+        learning_rate=0.08,
+        max_iter=200,
+        l2_regularization=0.1,
+        random_state=42,
+        early_stopping=False,
+    )
+
+
 def _subset_metrics(y: np.ndarray, pred: np.ndarray, labels: list[str]) -> dict:
     if len(y) == 0:
         return {}
@@ -129,7 +164,15 @@ def grouped_cv(
         n_cls = len(le.classes_)
         if model == "logreg":
             clf = _logreg()
+            clf.fit(Xtr, ytr_enc, clf__sample_weight=_inv_weights(ytr_enc))
+            pred_enc = clf.predict(Xte)
+        elif model == "mlp":
+            clf = _mlp()
             clf.fit(Xtr, ytr_enc)
+            pred_enc = clf.predict(Xte)
+        elif model == "hgb":
+            clf = _hgb()
+            clf.fit(Xtr, ytr_enc, sample_weight=_inv_weights(ytr_enc))
             pred_enc = clf.predict(Xte)
         else:
             clf = _xgb(n_cls)
