@@ -1,0 +1,12 @@
+{
+  "k": 9,
+  "selection": "base+hdmd_d3_r4",
+  "stable5": 0.8355690929024263,
+  "kedmd_sigma_mult": 1.0,
+  "kedmd_rank": 8,
+  "hankel_delays": 3,
+  "hankel_rank": 4,
+  "seed": 42,
+  "note": "argmax segment grouped LOVO stable5 among v4 / structural add-ons / kedmd+hankel grids / all",
+  "use_all_families": false
+}

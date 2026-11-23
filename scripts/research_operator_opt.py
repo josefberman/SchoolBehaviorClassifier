@@ -200,6 +200,23 @@ def _hankel_cols(delays, rank, names):
     return [i for i, n in enumerate(names) if n.startswith(pref)]
 
 
+def frozen_cols(hyps, names):
+    """Column indices for the frozen hyp selection (not the kitchen-sink vector)."""
+    sel = str(hyps.get("selection", "operator_opt_all"))
+    if hyps.get("use_all_families") or sel in {"operator_opt_all", "operator"}:
+        return columns_for_operator_families(("operator",), names)
+    if sel == "operator_v4":
+        return columns_for_operator_families(("operator_v4",), names)
+    base = columns_for_operator_families(("operator_v4", "connection", "hodge2"), names)
+    if sel.startswith("base+kedmd_"):
+        st, rt = sel.split("base+kedmd_")[-1].split("_")  # s05_r4
+        return sorted(set(base + _kedmd_cols(st, rt, names)))
+    if sel.startswith("base+hdmd_"):
+        dtag, rtag = sel.split("base+hdmd_")[-1].split("_")  # d3_r4
+        return sorted(set(base + _hankel_cols(int(dtag[1:]), int(rtag[1:]), names)))
+    return columns_for_operator_families(("operator",), names)
+
+
 def sweep_segment(rebuild=False):
     rows = []
     best = {"score": -1.0, "k": 8, "kedmd": (1.0, 8, "s1", "r8"), "hankel": (3, 8)}
@@ -286,13 +303,29 @@ def sweep_segment(rebuild=False):
     (OUT / "operator_opt_hyps.json").write_text(
         json.dumps(_jsonable({k: hyps[k] for k in hyps if k != "sweep_rows"}), indent=2) + "\n"
     )
+    import csv as _csv
+
+    with (OUT / "operator_opt_sweep.csv").open("w", newline="") as fh:
+        w = _csv.DictWriter(fh, fieldnames=["k", "cfg", "stable5", "nfeat", "kedmd", "hankel"])
+        w.writeheader()
+        for rec in rows:
+            w.writerow(
+                {
+                    "k": rec.get("k"),
+                    "cfg": rec.get("cfg"),
+                    "stable5": rec.get("stable5"),
+                    "nfeat": rec.get("nfeat"),
+                    "kedmd": rec.get("kedmd") or "",
+                    "hankel": rec.get("hankel") or "",
+                }
+            )
     print("froze", {k: hyps[k] for k in hyps if k != "sweep_rows"}, flush=True)
     return hyps
 
 
-def _eval_block(Xop, y, groups, op_names, Xph, ph_names, *, permute=False, models=("xgb",), shap=False):
+def _eval_block(Xop, y, groups, op_names, Xph, ph_names, *, permute=False, models=("xgb",), shap=False, hyps=None):
     out = {"n": int(len(y)), "n_videos": int(len(set(groups.tolist()))), "ablations": {}, "classifiers": {}}
-    tasks_full = True
+    hyps = hyps or {"use_all_families": True, "selection": "operator_opt_all"}
 
     def run_all(X, cols, fn, model="xgb", perm=0, do_shap=False):
         block = {"n": int(len(y)), "tasks": {}}
@@ -320,24 +353,31 @@ def _eval_block(Xop, y, groups, op_names, Xph, ph_names, *, permute=False, model
         return block
 
     for abl, fams in STRUCT_ABLS.items():
-        cols = columns_for_operator_families(fams, op_names)
+        if abl == "operator_opt":
+            cols = frozen_cols(hyps, op_names)
+        else:
+            cols = columns_for_operator_families(fams, op_names)
         fn = [op_names[i] for i in cols]
         print(f" ablation {abl} ({len(fn)})", flush=True)
         perm = 3 if permute and abl in {"operator_opt", "operator_v4"} else 0
         do_shap = shap and abl == "operator_opt"
         out["ablations"][abl] = run_all(Xop, cols, fn, perm=perm, do_shap=do_shap)
+    cols_all = columns_for_operator_families(("operator",), op_names)
+    fn_all = [op_names[i] for i in cols_all]
+    print(f" ablation operator_all ({len(fn_all)})", flush=True)
+    out["ablations"]["operator_all"] = run_all(Xop, cols_all, fn_all)
     for abl, fams in PHYS_ABLS.items():
         cols = columns_for_families(fams, ph_names)
         fn = [ph_names[i] for i in cols]
         print(f" ablation {abl} ({len(fn)})", flush=True)
         out["ablations"][abl] = run_all(Xph, cols, fn)
-    cols_o = columns_for_operator_families(("operator",), op_names)
+    cols_o = frozen_cols(hyps, op_names)
     cols_p = columns_for_families(("baseline", "fluct", "rate", "shape", "tunstrom", "fields", "early"), ph_names)
     Xc = np.hstack([Xop[:, cols_o], Xph[:, cols_p]])
     fn = [op_names[i] for i in cols_o] + [ph_names[i] for i in cols_p]
     print(f" ablation operator+physical ({len(fn)})", flush=True)
     out["ablations"]["operator+physical"] = run_all(Xc, list(range(len(fn))), fn)
-    cols = columns_for_operator_families(("operator",), op_names)
+    cols = frozen_cols(hyps, op_names)
     fn = [op_names[i] for i in cols]
     for model in models:
         print(f" classifier {model}", flush=True)
@@ -461,7 +501,7 @@ def _plot_scales(combined):
     plt.close(fig)
 
 
-def run_scale(scale, k, rebuild=False, permute=False):
+def run_scale(scale, k, rebuild=False, permute=False, hyps=None):
     if scale == "segment":
         Xop, op_names, Xph, ph_names, y, groups, n_fish, meta = extract_segments(k, rebuild=rebuild)
         tag = "segment"
@@ -479,17 +519,29 @@ def run_scale(scale, k, rebuild=False, permute=False):
         "n_videos": int(len(set(groups.tolist()))),
         "n_operator_features": len(op_names),
         "note": "Optimized operators. Unscaled kNN. No Φ. 150-fish pooled only.",
+        "hyps": {k: v for k, v in (hyps or {}).items() if k != "sweep_rows"},
     }
     print(f"\n=== pooled opt {tag} n={len(y)} ===", flush=True)
     models = ("xgb", "logreg", "hgb") if scale == "segment" else ("xgb", "hgb")
     summary["pooled"] = _eval_block(
-        Xop, y, groups, op_names, Xph, ph_names, permute=permute, models=models, shap=permute and scale == "segment"
+        Xop,
+        y,
+        groups,
+        op_names,
+        Xph,
+        ph_names,
+        permute=permute,
+        models=models,
+        shap=permute and scale == "segment",
+        hyps=hyps,
     )
     summary["by_group"] = {}
     for g in sorted(set(gl.tolist()), key=str):
         m = gl == g
         print(f"\n=== {tag} {g} n={int(m.sum())} ===", flush=True)
-        summary["by_group"][g] = _eval_block(Xop[m], y[m], groups[m], op_names, Xph[m], ph_names, permute=False, models=("xgb",))
+        summary["by_group"][g] = _eval_block(
+            Xop[m], y[m], groups[m], op_names, Xph[m], ph_names, permute=False, models=("xgb",), hyps=hyps
+        )
     if scale != "segment":
         print("events…", flush=True)
         summary["events"] = _events(Xop, op_names, y, groups, meta, min_dwell=3)
@@ -515,7 +567,7 @@ def main():
         return
     summaries = {}
     for sc in ("segment", "w15", "w5"):
-        summaries[sc] = run_scale(sc, k, rebuild=args.rebuild, permute=(sc == "segment"))
+        summaries[sc] = run_scale(sc, k, rebuild=args.rebuild, permute=(sc == "segment"), hyps=hyps)
     (OUT / "operator_opt_three_scales.json").write_text(
         json.dumps({s: {"n_rows": v["n_rows"], "pooled_stable5_opt": _f1(v["pooled"], "operator_opt", "stable5"), "pooled_stable5_v4": _f1(v["pooled"], "operator_v4", "stable5"), "pooled_phi4": _f1(v["pooled"], "phi4", "stable5"), "pooled_physical": _f1(v["pooled"], "physical", "stable5")} for s, v in summaries.items()}, indent=2)
         + "\n"

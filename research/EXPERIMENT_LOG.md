@@ -137,4 +137,53 @@ Sources: `research/REPORT.md`, `research/OPERATOR_REPORT.md`,
   `operator_opt_hyps.json`,
   `operator_opt_lovo_{segment,w15_h5,w5_h5}.json`,
   `operator_opt_three_scales.json`.
-- **Status.** Code complete; sweep not yet run.
+- **Status.** Segment sweep finished 2026-11-23 20:16 UTC. Three-scale LOVO
+  running after a freeze-column fix (see next entry).
+
+## 2026-11-23 20:16 UTC — iteration 5 segment hyp sweep (freeze)
+
+- **Goal.** Joint grouped-LOVO selection of k, KEDMD (σ, rank), Hankel
+  (delay, rank) on whole annotated segments. Freeze one config.
+- **Command.** `python3 scripts/research_operator_opt.py --mode all`
+  (sweep portion). Seed 42. k ∈ {8, 9}.
+- **Results.** `research/results/operator_opt_sweep.json`,
+  `operator_opt_hyps.json`, `operator_opt_sweep.csv`.
+  Caches: `research/cache/operator_opt_segments_k{8,9}.npz` (gitignored).
+- **Pooled stable5 (segment, XGB).** Sources: sweep JSON.
+
+  | cfg | k=8 | k=9 |
+  | --- | ---: | ---: |
+  | operator_v4 | 0.823 | 0.823 (same 61 cols; k only) |
+  | connection alone | 0.325 | 0.336 |
+  | hodge2 alone | 0.470 | 0.445 |
+  | kedmd alone | 0.442 | 0.425 |
+  | hankel grid alone | 0.465 | 0.414 |
+  | v4+connection | 0.817 | 0.816 |
+  | v4+hodge2 | 0.820 | 0.814 |
+  | v4+kedmd (all σ/rank) | 0.805 | 0.817 |
+  | kitchen-sink all 115 | 0.803 | 0.815 |
+  | base+kedmd_s05_r4 | 0.824 | 0.835 |
+  | **base+hdmd_d3_r4** | 0.826 | **0.836** |
+  | base+hdmd_d3_r8 | 0.818 | 0.829 |
+
+- **Frozen.** k**=9**, selection `base+hdmd_d3_r4` = v4 + connection + hodge2
+  + Hankel delays=3 rank=4 (79 features). Segment stable5 **0.836**.
+  Near-tie: `base+kedmd_s05_r4` at k=9 is 0.835. Kitchen-sink 115-col vector
+  **loses** (0.815): extra KEDMD/Hankel columns are collinear noise.
+- **Conclusion so far.** New families as add-ons, not replacements. Frozen
+  set is a small lift over v4 0.823, still far from 4 Φ 0.929.
+- **Bug / abort.** First `--mode all` LOVO used the 115-col kitchen-sink as
+  `operator_opt` instead of the frozen 79-col subset. Killed after sweep
+  write; caches kept. Restart `--mode lovo` with `frozen_cols()`.
+- **Next.** Three-scale LOVO at frozen hyps; permutation + SHAP on segment;
+  min-dwell events on windows.
+
+## 2026-11-23 20:18 UTC — iteration 5 three-scale LOVO (frozen hyps)
+
+- **Goal.** Same protocol as iteration 4: grouped LOVO at segment / w=15 /
+  w=5 with frozen k=9, Hankel d=3 r=4, plus structural ablations.
+- **Command.** `python3 scripts/research_operator_opt.py --mode lovo`
+- **Seed.** 42
+- **Results (to be written).** `operator_opt_lovo_{segment,w15_h5,w5_h5}.json`,
+  `operator_opt_three_scales.json`.
+- **Status.** In progress.

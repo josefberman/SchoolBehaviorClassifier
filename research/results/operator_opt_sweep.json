@@ -1,0 +1,364 @@
+{
+  "k": 9,
+  "selection": "base+hdmd_d3_r4",
+  "stable5": 0.8355690929024263,
+  "kedmd_sigma_mult": 1.0,
+  "kedmd_rank": 8,
+  "hankel_delays": 3,
+  "hankel_rank": 4,
+  "seed": 42,
+  "note": "argmax segment grouped LOVO stable5 among v4 / structural add-ons / kedmd+hankel grids / all",
+  "sweep_rows": [
+    {
+      "k": 8,
+      "cfg": "operator_v4",
+      "stable5": 0.8233995701885609,
+      "nfeat": 61
+    },
+    {
+      "k": 8,
+      "cfg": "operator_v4",
+      "stable5": 0.8233995701885609,
+      "nfeat": 61,
+      "transient": null
+    },
+    {
+      "k": 8,
+      "cfg": "connection",
+      "stable5": 0.32536488766592003,
+      "nfeat": 6,
+      "transient": null
+    },
+    {
+      "k": 8,
+      "cfg": "hodge2",
+      "stable5": 0.46971619711854806,
+      "nfeat": 9,
+      "transient": null
+    },
+    {
+      "k": 8,
+      "cfg": "kedmd",
+      "stable5": 0.4424504252840281,
+      "nfeat": 25,
+      "transient": null
+    },
+    {
+      "k": 8,
+      "cfg": "hankel",
+      "stable5": 0.4649505293360289,
+      "nfeat": 12,
+      "transient": null
+    },
+    {
+      "k": 8,
+      "cfg": "v4+connection",
+      "stable5": 0.8168102867587713,
+      "nfeat": 67,
+      "transient": null
+    },
+    {
+      "k": 8,
+      "cfg": "v4+hodge2",
+      "stable5": 0.8203668205114859,
+      "nfeat": 70,
+      "transient": null
+    },
+    {
+      "k": 8,
+      "cfg": "v4+kedmd",
+      "stable5": 0.8053941571034322,
+      "nfeat": 86,
+      "transient": null
+    },
+    {
+      "k": 8,
+      "cfg": "operator_opt",
+      "stable5": 0.8033651386829332,
+      "nfeat": 115,
+      "transient": null
+    },
+    {
+      "k": 8,
+      "cfg": "base+kedmd_s05_r4",
+      "stable5": 0.8241318258461116,
+      "nfeat": 81,
+      "kedmd": [
+        0.5,
+        4
+      ]
+    },
+    {
+      "k": 8,
+      "cfg": "base+kedmd_s05_r8",
+      "stable5": 0.8059528916671773,
+      "nfeat": 81,
+      "kedmd": [
+        0.5,
+        8
+      ]
+    },
+    {
+      "k": 8,
+      "cfg": "base+kedmd_s1_r4",
+      "stable5": 0.8175812704317489,
+      "nfeat": 81,
+      "kedmd": [
+        1.0,
+        4
+      ]
+    },
+    {
+      "k": 8,
+      "cfg": "base+kedmd_s1_r8",
+      "stable5": 0.8139618941048363,
+      "nfeat": 81,
+      "kedmd": [
+        1.0,
+        8
+      ]
+    },
+    {
+      "k": 8,
+      "cfg": "base+kedmd_s2_r4",
+      "stable5": 0.8075695746570961,
+      "nfeat": 81,
+      "kedmd": [
+        2.0,
+        4
+      ]
+    },
+    {
+      "k": 8,
+      "cfg": "base+kedmd_s2_r8",
+      "stable5": 0.8090282976154844,
+      "nfeat": 81,
+      "kedmd": [
+        2.0,
+        8
+      ]
+    },
+    {
+      "k": 8,
+      "cfg": "base+hdmd_d3_r4",
+      "stable5": 0.8262255814339806,
+      "nfeat": 79,
+      "hankel": [
+        3,
+        4
+      ]
+    },
+    {
+      "k": 8,
+      "cfg": "base+hdmd_d3_r8",
+      "stable5": 0.8184905753169878,
+      "nfeat": 79,
+      "hankel": [
+        3,
+        8
+      ]
+    },
+    {
+      "k": 8,
+      "cfg": "base+hdmd_d6_r4",
+      "stable5": 0.8249402929874894,
+      "nfeat": 79,
+      "hankel": [
+        6,
+        4
+      ]
+    },
+    {
+      "k": 8,
+      "cfg": "base+hdmd_d6_r8",
+      "stable5": 0.823464911609577,
+      "nfeat": 79,
+      "hankel": [
+        6,
+        8
+      ]
+    },
+    {
+      "k": 8,
+      "cfg": "operator_opt_all",
+      "stable5": 0.8033651386829332,
+      "nfeat": 115
+    },
+    {
+      "k": 9,
+      "cfg": "operator_v4",
+      "stable5": 0.8197223393138046,
+      "nfeat": 61
+    },
+    {
+      "k": 9,
+      "cfg": "operator_v4",
+      "stable5": 0.8197223393138046,
+      "nfeat": 61,
+      "transient": null
+    },
+    {
+      "k": 9,
+      "cfg": "connection",
+      "stable5": 0.3364355683685862,
+      "nfeat": 6,
+      "transient": null
+    },
+    {
+      "k": 9,
+      "cfg": "hodge2",
+      "stable5": 0.44508357306727636,
+      "nfeat": 9,
+      "transient": null
+    },
+    {
+      "k": 9,
+      "cfg": "kedmd",
+      "stable5": 0.4254918414918415,
+      "nfeat": 25,
+      "transient": null
+    },
+    {
+      "k": 9,
+      "cfg": "hankel",
+      "stable5": 0.4140829329862766,
+      "nfeat": 12,
+      "transient": null
+    },
+    {
+      "k": 9,
+      "cfg": "v4+connection",
+      "stable5": 0.8160526145431624,
+      "nfeat": 67,
+      "transient": null
+    },
+    {
+      "k": 9,
+      "cfg": "v4+hodge2",
+      "stable5": 0.8135132272501657,
+      "nfeat": 70,
+      "transient": null
+    },
+    {
+      "k": 9,
+      "cfg": "v4+kedmd",
+      "stable5": 0.8170161383151504,
+      "nfeat": 86,
+      "transient": null
+    },
+    {
+      "k": 9,
+      "cfg": "operator_opt",
+      "stable5": 0.8154355576222583,
+      "nfeat": 115,
+      "transient": null
+    },
+    {
+      "k": 9,
+      "cfg": "base+kedmd_s05_r4",
+      "stable5": 0.8351874790213009,
+      "nfeat": 81,
+      "kedmd": [
+        0.5,
+        4
+      ]
+    },
+    {
+      "k": 9,
+      "cfg": "base+kedmd_s05_r8",
+      "stable5": 0.8231659179027601,
+      "nfeat": 81,
+      "kedmd": [
+        0.5,
+        8
+      ]
+    },
+    {
+      "k": 9,
+      "cfg": "base+kedmd_s1_r4",
+      "stable5": 0.8327738084553238,
+      "nfeat": 81,
+      "kedmd": [
+        1.0,
+        4
+      ]
+    },
+    {
+      "k": 9,
+      "cfg": "base+kedmd_s1_r8",
+      "stable5": 0.8166198508431519,
+      "nfeat": 81,
+      "kedmd": [
+        1.0,
+        8
+      ]
+    },
+    {
+      "k": 9,
+      "cfg": "base+kedmd_s2_r4",
+      "stable5": 0.8195020272180464,
+      "nfeat": 81,
+      "kedmd": [
+        2.0,
+        4
+      ]
+    },
+    {
+      "k": 9,
+      "cfg": "base+kedmd_s2_r8",
+      "stable5": 0.8185988680222721,
+      "nfeat": 81,
+      "kedmd": [
+        2.0,
+        8
+      ]
+    },
+    {
+      "k": 9,
+      "cfg": "base+hdmd_d3_r4",
+      "stable5": 0.8355690929024263,
+      "nfeat": 79,
+      "hankel": [
+        3,
+        4
+      ]
+    },
+    {
+      "k": 9,
+      "cfg": "base+hdmd_d3_r8",
+      "stable5": 0.8288159512378191,
+      "nfeat": 79,
+      "hankel": [
+        3,
+        8
+      ]
+    },
+    {
+      "k": 9,
+      "cfg": "base+hdmd_d6_r4",
+      "stable5": 0.8157386340273277,
+      "nfeat": 79,
+      "hankel": [
+        6,
+        4
+      ]
+    },
+    {
+      "k": 9,
+      "cfg": "base+hdmd_d6_r8",
+      "stable5": 0.8228634612145507,
+      "nfeat": 79,
+      "hankel": [
+        6,
+        8
+      ]
+    },
+    {
+      "k": 9,
+      "cfg": "operator_opt_all",
+      "stable5": 0.8154355576222583,
+      "nfeat": 115
+    }
+  ],
+  "use_all_families": false
+}
