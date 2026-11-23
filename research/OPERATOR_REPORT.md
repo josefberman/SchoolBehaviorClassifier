@@ -3,8 +3,9 @@
 Josef Berman, Swarm & AI Lab (University of Haifa). Branch
 `research/feature-space-and-sim`. Annotation files were not modified.
 H5 trajectories from `https://huggingface.co/buckets/josefberman/SchoolingFish`.
-Every number below is from `scripts/research_operator.py` (JSON in
-`research/results/operator_*.json`). Chronological run log:
+Every number below is from `scripts/research_operator.py` and
+`scripts/research_operator_opt.py` (JSON in `research/results/operator_*.json`
+and `operator_opt_*.json`). Chronological run log:
 [`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md).
 
 Linked from `research/REPORT.md`. This pass **drops all hand-crafted Φ / M /
@@ -249,4 +250,47 @@ Reproduce:
 ```bash
 python scripts/research_operator.py --scale ksweep
 python scripts/research_operator.py --scale all --skip-ksweep
+python scripts/research_operator_opt.py --mode sweep
+python scripts/research_operator_opt.py --mode lovo
 ```
+
+## Iteration 5 — connection, Hodge 2-complex, Kernel-EDMD, Hankel tune
+
+Hypothesis: SO(2) connection Laplacian (Singer 2012), Helmholtz–Hodge on kNN
+triangles, RBF Kernel-EDMD + linear VAMP-2, and a Hankel delay/rank grid can
+close the remaining gap to 4 Φ without writing Φ. VAMPNet / deep Koopman
+skipped (`torch` not installed). Hyps selected on **segment grouped LOVO**
+then frozen: **k=9**, Hankel delays=3 rank=4 on top of v4 + connection +
+hodge2 (79 features). Sweep JSON: `operator_opt_sweep.json`. Near-tie:
+`base+kedmd_s05_r4` 0.835 vs winner 0.836. Kitchen-sink 115 columns **lost**
+(0.815).
+
+Pooled stable5 / coarse-6 transient F1 (`operator_opt_lovo_*.json`):
+
+| Scale | v4 (k=9) | +hodge2 | **opt (frozen)** | all 115 | 4 Φ | physical |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| segment | 0.820 | 0.814 | **0.836** | 0.815 | 0.929 | 0.960 |
+| w=15 | 0.659 | **0.689** | 0.686 | 0.692 | 0.734 | 0.820 |
+| w=5 | 0.620 | 0.658 | **0.667** | 0.667 | 0.715 | 0.801 |
+
+Transient F1: opt 0.741 / 0.355 / 0.346 vs 4 Φ 0.657 / 0.402 / 0.360 vs
+physical 0.852 / 0.516 / 0.482.
+
+Connection alone ~0.34 at every scale; v4+connection is flat or worse.
+KEDMD alone 0.425 / 0.244 / 0.174 — dies at short windows. Best classifier
+on the frozen set is XGB (0.836 / 0.686 / 0.667); HGB 0.812 / 0.671 / 0.650.
+
+Segment permutation: `dyn_dlog_ell` 0.124, `hodge_rad_mean` 0.079,
+`h2_grad_frac` 0.059. SHAP agrees, with `h2_grad_frac` second. The new
+coordinate that moves windows is Helmholtz gradient energy, not Kernel-EDMD.
+
+min-dwell Viterbi (D=3) vs unconstrained HMM vs i.i.d. windows, ±45 frames:
+w=15 F1 0.168 / 0.168 / 0.172; w=5 0.211 / 0.211 / 0.189. Still hundreds of
+false positives. Duration constraint does not help.
+
+10-fish is **worse** under the pooled freeze than v4 (segment 0.708 vs
+0.733; w=15 0.376 vs 0.390; w=5 0.351 vs 0.377). 30/70-fish windows gain.
+
+**Verdict, iteration 5.** Not a Φ replacement. The only operator upgrade
+that moves window F1 is the kNN-triangle Helmholtz–Hodge split. Connection
+and Kernel-EDMD do not. Do not dump every Koopman variant into the vector.

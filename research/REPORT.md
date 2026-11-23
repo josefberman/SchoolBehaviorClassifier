@@ -478,6 +478,22 @@ Operator does **not** beat 4 Φ. Signed Hodge radial flux + `dyn_dlog_ell`
 are the features that matter (permutation). \(k\)-sweep pooled: 0.753 (k=3)
 → **0.823 (k=8)** → 0.820 (k=9). Nested LOVO preferred k=9 in 6/10 videos.
 
+## Iteration 5 — optimize operators (still no Φ)
+
+Log: [`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md). Eval:
+`scripts/research_operator_opt.py`. Segment grouped LOVO froze **k=9** and
+Hankel delays=3 rank=4 on v4 + connection + Helmholtz–Hodge 2-complex (79
+features). Kernel-EDMD RBF + VAMP-2 were in the sweep; VAMPNet was not
+(`torch` absent).
+
+Pooled stable5: frozen opt **0.836 / 0.686 / 0.667** vs v4 0.820 / 0.659 /
+0.620 vs 4 Φ 0.929 / 0.734 / 0.715 vs physical 0.960 / 0.820 / 0.801
+(segment / w=15 / w=5). The window lift is `v4+hodge2` (0.689 / 0.658).
+Connection ~0.34 alone. KEDMD 0.174 at w=5. Kitchen-sink 115 cols lose at
+segment (0.815). SHAP/perm: `dyn_dlog_ell`, `h2_grad_frac`, `hodge_rad_mean`.
+min-dwell Viterbi event F1 0.168 (w=15) / 0.211 (w=5), same as unconstrained
+HMM, still over-fires. 10-fish is worse than v4 under the pooled freeze.
+
 ## Reproduce
 
 ```bash
@@ -529,3 +545,8 @@ Original training / eval CLIs are unchanged. Speed-matched YAMLs:
    `dyn_dlog_ell` — the operator twins of \(\Phi_{\mathrm{rad}}\) and
    dlogR — not Laplacian \(\lambda_2\) and not short-window Koopman.
    Methods note: **do not NND-scale** if expansion/compaction matter.
+6. **Not a Φ replacement after optimizing operators.** Frozen k=9 + Hodge
+   2-complex + Hankel-d3-r4 reaches 0.836 / 0.686 / 0.667. Helmholtz–Hodge
+   on kNN triangles is the only new family that moves window F1. SO(2)
+   connection and Kernel-EDMD do not. Chronological log:
+   [`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md).

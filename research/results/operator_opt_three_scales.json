@@ -1,0 +1,23 @@
+{
+  "segment": {
+    "n_rows": 591,
+    "pooled_stable5_opt": 0.8355690929024263,
+    "pooled_stable5_v4": 0.8197223393138046,
+    "pooled_phi4": 0.9294393123679733,
+    "pooled_physical": 0.9600943591966719
+  },
+  "w15": {
+    "n_rows": 39304,
+    "pooled_stable5_opt": 0.6861731113786884,
+    "pooled_stable5_v4": 0.6593858267186874,
+    "pooled_phi4": 0.7336368710170074,
+    "pooled_physical": 0.820348678252931
+  },
+  "w5": {
+    "n_rows": 40486,
+    "pooled_stable5_opt": 0.6669379188723747,
+    "pooled_stable5_v4": 0.6202398103312361,
+    "pooled_phi4": 0.7148918696372004,
+    "pooled_physical": 0.8009282770436812
+  }
+}

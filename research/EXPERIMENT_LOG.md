@@ -178,12 +178,58 @@ Sources: `research/REPORT.md`, `research/OPERATOR_REPORT.md`,
 - **Next.** Three-scale LOVO at frozen hyps; permutation + SHAP on segment;
   min-dwell events on windows.
 
-## 2026-11-23 20:18 UTC — iteration 5 three-scale LOVO (frozen hyps)
+## 2026-11-23 20:18–23:02 UTC — iteration 5 three-scale LOVO (frozen hyps)
 
 - **Goal.** Same protocol as iteration 4: grouped LOVO at segment / w=15 /
   w=5 with frozen k=9, Hankel d=3 r=4, plus structural ablations.
 - **Command.** `python3 scripts/research_operator_opt.py --mode lovo`
-- **Seed.** 42
-- **Results (to be written).** `operator_opt_lovo_{segment,w15_h5,w5_h5}.json`,
-  `operator_opt_three_scales.json`.
-- **Status.** In progress.
+- **Seed.** 42. Frozen: k=9, 79 cols = v4 + connection + hodge2 + hdmd_d3_r4.
+- **Results.** `research/results/operator_opt_lovo_{segment,w15_h5,w5_h5}.json`,
+  `operator_opt_three_scales.json`, figure
+  `research/figures/operator_opt_stable5_three_scales.png`.
+- **Pooled stable5 / coarse-6 transient F1** (XGB). Source: those JSONs.
+
+  | abl | stab seg / w15 / w5 | trans seg / w15 / w5 |
+  | --- | --- | --- |
+  | operator_v4 (k=9) | 0.820 / 0.659 / 0.620 | 0.740 / 0.291 / 0.282 |
+  | connection | 0.336 / 0.347 / 0.341 | 0.458 / 0.197 / 0.205 |
+  | hodge2 | 0.445 / 0.478 / 0.478 | 0.447 / 0.226 / 0.222 |
+  | kedmd | 0.425 / 0.244 / 0.174 | 0.700 / 0.094 / 0.113 |
+  | hankel | 0.414 / 0.335 / 0.290 | 0.680 / 0.095 / 0.047 |
+  | v4+connection | 0.816 / 0.661 / 0.623 | 0.719 / 0.289 / 0.286 |
+  | v4+hodge2 | 0.814 / 0.689 / 0.658 | 0.739 / 0.347 / 0.345 |
+  | v4+kedmd | 0.817 / 0.660 / 0.623 | 0.759 / 0.284 / 0.277 |
+  | **operator_opt (frozen)** | **0.836 / 0.686 / 0.667** | 0.741 / 0.355 / 0.346 |
+  | kitchen-sink 115 | 0.815 / 0.692 / 0.667 | 0.764 / 0.359 / 0.346 |
+  | 4 Φ | 0.929 / 0.734 / 0.715 | 0.657 / 0.402 / 0.360 |
+  | physical | 0.960 / 0.820 / 0.801 | 0.852 / 0.516 / 0.482 |
+  | opt+physical | 0.957 / 0.821 / 0.802 | 0.864 / 0.523 / 0.485 |
+
+- **Per-N stable5 operator_opt vs v4 vs 4 Φ.** 150-fish skipped (one video).
+
+  | scale | 10-fish opt / v4 / Φ | 30-fish | 70-fish |
+  | --- | --- | --- | --- |
+  | segment | 0.708 / 0.733 / 0.744 | 0.702 / 0.676 / 0.886 | 0.668 / 0.677 / 0.905 |
+  | w=15 | 0.376 / 0.390 / 0.524 | 0.571 / 0.530 / 0.733 | 0.652 / 0.632 / 0.794 |
+  | w=5 | 0.351 / 0.377 / 0.471 | 0.537 / 0.488 / 0.697 | 0.637 / 0.595 / 0.779 |
+
+- **Classifiers (frozen opt, pooled stable5).** segment XGB 0.836 / HGB 0.812 /
+  logreg 0.793. w=15 XGB 0.686 / HGB 0.671. w=5 XGB 0.667 / HGB 0.650.
+- **Permutation (segment, 3 shuffles).** `dyn_dlog_ell` 0.124, `hodge_rad_mean`
+  0.079, `dmd_radius` 0.062, `h2_grad_frac` 0.059, `hdmd_freq_max` 0.043.
+- **SHAP |value| mean (segment TreeExplainer).** `dyn_dlog_ell` 0.591,
+  `h2_grad_frac` 0.460, `hodge_rad_mean` 0.392, `mag_q25_dl2` 0.269,
+  `dmd_radius` 0.236.
+- **Events ±45 frames, min_dwell=3.** w=15: HMM 0.168, min-dwell 0.168, iid
+  0.172 (836 / 847 / 1500 pred vs 248 true). w=5: HMM 0.211, min-dwell 0.211,
+  iid 0.189 (699 / 701 / 1413 pred). Duration constraint does not cut FPs.
+- **Conclusion.** Frozen operators 0.836 / 0.686 / 0.667 vs 4 Φ 0.929 /
+  0.734 / 0.715. Lift over v4 is +0.016 / +0.027 / +0.047, almost all from
+  the Helmholtz–Hodge 2-complex (`v4+hodge2` 0.814 / 0.689 / 0.658).
+  Connection is ~0.34 alone and does not help v4. Kernel-EDMD collapses at
+  short windows (0.174 at w=5). Kitchen-sink loses at segment. 10-fish is
+  worse with the pooled freeze than with v4. min-dwell Viterbi is not an
+  event detector. Still not a Φ replacement.
+- **Next.** Stop adding Koopman/EDMD columns. If another operator pass: keep
+  unscaled Hodge 1-form + 2-complex + `dyn_dlog_ell`, drop KEDMD, retune k
+  on 10-fish separately. VAMPNet still blocked (`torch` absent).
