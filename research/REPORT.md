@@ -4,7 +4,8 @@ Josef Berman, Swarm & AI Lab (University of Haifa). Research branch
 `research/feature-space-and-sim`. Annotation files were not modified.
 
 Every number below comes from a script in this branch. JSON dumps live in
-`research/results/`. Figures live in `research/figures/`.
+`research/results/`. Figures live in `research/figures/`. Chronological
+run log (hyps, commands, seeds, failed attempts): [`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md).
 
 ## Questions
 
@@ -494,6 +495,8 @@ python scripts/research_sim2real.py
 python scripts/research_plots.py
 python scripts/research_operator.py --scale ksweep
 python scripts/research_operator.py --scale all --skip-ksweep
+python scripts/research_operator_opt.py --mode sweep
+python scripts/research_operator_opt.py --mode lovo
 ```
 
 Original training / eval CLIs are unchanged. Speed-matched YAMLs:

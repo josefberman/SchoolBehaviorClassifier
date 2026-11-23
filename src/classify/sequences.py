@@ -206,6 +206,55 @@ class SupervisedHMM:
             path[t] = psi[t + 1, path[t + 1]]
         return np.array([self.states[i] for i in path], dtype=object)
 
+    def viterbi_min_dwell(self, X: np.ndarray, min_dwell: int = 3) -> np.ndarray:
+        """Viterbi that forbids leaving a state before ``min_dwell`` steps."""
+        D = max(int(min_dwell), 1)
+        if D <= 1:
+            return self.viterbi(X)
+        logB = self._logB(X)
+        T, k = logB.shape
+        # expanded state (label, age) with age in 0..D-1; age D-1 means "can leave"
+        n = k * D
+        delta = np.full((T, n), -np.inf)
+        psi = np.zeros((T, n), dtype=np.int32)
+
+        def idx(lab, age):
+            return lab * D + age
+
+        for i in range(k):
+            delta[0, idx(i, 0)] = self.logpi[i] + logB[0, i]
+        for t in range(1, T):
+            for j in range(k):
+                # age 0: switch in from a different mature state
+                enter = np.full(k, -np.inf)
+                for i in range(k):
+                    if i == j:
+                        continue
+                    enter[i] = delta[t - 1, idx(i, D - 1)] + self.logA[i, j]
+                i_best = int(np.argmax(enter))
+                delta[t, idx(j, 0)] = enter[i_best] + logB[t, j]
+                psi[t, idx(j, 0)] = idx(i_best, D - 1)
+                # ages 1 .. D-2: must continue the same label
+                for age in range(1, D - 1):
+                    src = idx(j, age - 1)
+                    delta[t, idx(j, age)] = delta[t - 1, src] + self.logA[j, j] + logB[t, j]
+                    psi[t, idx(j, age)] = src
+                # mature: arrive from age D-2 or stay mature
+                cand_src = [idx(j, D - 1)]
+                cand_sc = [delta[t - 1, idx(j, D - 1)] + self.logA[j, j]]
+                if D >= 2:
+                    cand_src.append(idx(j, D - 2))
+                    cand_sc.append(delta[t - 1, idx(j, D - 2)] + self.logA[j, j])
+                b = int(np.argmax(cand_sc))
+                delta[t, idx(j, D - 1)] = cand_sc[b] + logB[t, j]
+                psi[t, idx(j, D - 1)] = cand_src[b]
+        last = int(np.argmax(delta[-1]))
+        path_e = np.zeros(T, dtype=np.int32)
+        path_e[-1] = last
+        for t in range(T - 2, -1, -1):
+            path_e[t] = psi[t + 1, path_e[t + 1]]
+        return np.array([self.states[i // D] for i in path_e], dtype=object)
+
 
 def cusum_changes(X: np.ndarray, threshold: float = 8.0, min_run: int = 20) -> list[int]:
     """Unsupervised mean-shift CUSUM on standardized feature trajectories."""

@@ -13,6 +13,9 @@ hodge     — signed divergence / radial flux + curl of the velocity 1-form
 dyn       — spectral change + kNN edge-length growth across the window
 dmd       — Exact DMD + Hankel-DMD on graph-Fourier coefficients of raw velocity
 koopman   — DMD residual + HAVOK forcing of λ₂(t)
+connection — SO(2) connection / vector-diffusion Laplacian on headings
+hodge2    — Helmholtz–Hodge split of the velocity 1-form on kNN triangles
+kedmd     — Kernel-EDMD (RBF) + linear VAMP-2 on permutation-invariant observables
 """
 
 from __future__ import annotations
@@ -30,6 +33,15 @@ MAG_Q = (0.25, 0.5)
 # with the frozen argmax of leakage-safe segment LOVO (see operator_k_sweep.json).
 K_NN = 8  # frozen from leakage-safe segment LOVO k-sweep; see research/results/operator_k_sweep.json
 K_CANDIDATES = (3, 4, 5, 6, 7, 8, 9)
+# Iteration-5 defaults; scripts/research_operator_opt.py may overwrite after sweep.
+HANKEL_DELAYS = 4
+HANKEL_RANK = 8
+KEDMD_SIGMA_MULT = 1.0
+KEDMD_RANK = 8
+KEDMD_SIGMA_GRID = (0.5, 1.0, 2.0)
+KEDMD_RANK_GRID = (4, 8)
+HANKEL_DELAY_GRID = (3, 6)
+HANKEL_RANK_GRID = (4, 8)
 
 
 def resolve_k(k: int | None, n_valid: int) -> int:
@@ -135,17 +147,88 @@ def koopman_names() -> list[str]:
     ]
 
 
-def all_operator_names() -> list[str]:
+def connection_names() -> list[str]:
+    return [
+        "conn_l2",
+        "conn_gap",
+        "conn_frustr",
+        "conn_heat1",
+        "connv_l2",
+        "connv_frustr",
+    ]
+
+
+def hodge2_names() -> list[str]:
+    return [
+        "h2_ntri",
+        "h2_grad_frac",
+        "h2_curl_frac",
+        "h2_harm_frac",
+        "h2_grad_mean",
+        "h2_curl_mean",
+        "h2_harm_mean",
+        "h2_harm_dim",
+        "h2_curl_signed",
+    ]
+
+
+def kedmd_names() -> list[str]:
+    names = ["kedmd_vamp2"]
+    for sm in ("s05", "s1", "s2"):
+        for r in ("r4", "r8"):
+            names.extend(
+                [
+                    f"kedmd_{sm}_{r}_growth_max",
+                    f"kedmd_{sm}_{r}_freq_max",
+                    f"kedmd_{sm}_{r}_resid",
+                    f"kedmd_{sm}_{r}_radius",
+                ]
+            )
+    return names
+
+
+def hankel_tune_names() -> list[str]:
+    names = []
+    for d in ("d3", "d6"):
+        for r in ("r4", "r8"):
+            names.extend(
+                [
+                    f"hdmd_{d}_{r}_growth_max",
+                    f"hdmd_{d}_{r}_freq_max",
+                    f"hdmd_{d}_{r}_resid",
+                ]
+            )
+    return names
+
+
+def v4_operator_names() -> list[str]:
+    """Iteration-4 frozen operator suite (k=8 unscaled kNN)."""
     return spatial_names() + magnetic_names() + hodge_names() + dyn_names() + dmd_names() + koopman_names()
+
+
+def all_operator_names() -> list[str]:
+    return (
+        v4_operator_names()
+        + connection_names()
+        + hodge2_names()
+        + kedmd_names()
+        + hankel_tune_names()
+        + ["dyn_dconn_l2", "dyn_dfrustr"]
+    )
 
 
 FAMILY_NAMES = {
     "spatial": spatial_names(),
     "magnetic": magnetic_names(),
     "hodge": hodge_names(),
-    "dyn": dyn_names(),
+    "dyn": dyn_names() + ["dyn_dconn_l2", "dyn_dfrustr"],
     "dmd": dmd_names(),
     "koopman": koopman_names(),
+    "connection": connection_names(),
+    "hodge2": hodge2_names(),
+    "kedmd": kedmd_names(),
+    "hankel": hankel_tune_names(),
+    "operator_v4": v4_operator_names(),
     "operator": all_operator_names(),
 }
 
@@ -288,7 +371,239 @@ def _hodge(xy: np.ndarray, vel: np.ndarray, adj: np.ndarray) -> dict[str, float]
     }
 
 
-def _dmd(X: np.ndarray, dt: float = 1.0) -> dict[str, float]:
+def _connection_features(w: np.ndarray, vel: np.ndarray) -> dict[str, float]:
+    """SO(2) connection Laplacian on unscaled headings (Singer 2012)."""
+    empty = {n: np.nan for n in connection_names()}
+    m = w.shape[0]
+    if m < 4:
+        return empty
+    spd = np.linalg.norm(vel, axis=-1)
+    ang = np.arctan2(vel[:, 1], vel[:, 0])
+    z = np.exp(1j * ang)
+    z = np.where(spd > 1e-12, z, 0.0)
+    phase = z[:, None] * np.conj(z[None, :])
+    H = w * phase
+    H = 0.5 * (H + H.conj().T)
+    np.fill_diagonal(H, 0.0)
+    deg = np.maximum(w.sum(axis=1), 1e-12)
+    dm = np.diag(deg ** (-0.5))
+    Ln = np.eye(m) - dm @ H @ dm
+    try:
+        ev = np.sort(np.real(np.linalg.eigvalsh(Ln)))
+    except Exception:
+        return empty
+    ev = ev[ev > -1e-8]
+    l2 = float(ev[1]) if ev.size > 1 else np.nan
+    gap = float(ev[2] - ev[1]) if ev.size > 2 else np.nan
+    heat1 = float(np.mean(np.exp(-np.clip(ev, 0, None)))) if ev.size else np.nan
+    num = np.real(np.vdot(z, H @ z))
+    den = float(np.real(np.vdot(z, deg * z))) + 1e-12
+    frustr = float(1.0 - num / den)
+    # speed-weighted connection
+    sw = np.sqrt(np.maximum(spd, 0.0))
+    wv = w * np.outer(sw, sw)
+    Hv = wv * phase
+    Hv = 0.5 * (Hv + Hv.conj().T)
+    np.fill_diagonal(Hv, 0.0)
+    degv = np.maximum(wv.sum(axis=1), 1e-12)
+    dmv = np.diag(degv ** (-0.5))
+    Lnv = np.eye(m) - dmv @ Hv @ dmv
+    try:
+        evv = np.sort(np.real(np.linalg.eigvalsh(Lnv)))
+        evv = evv[evv > -1e-8]
+        l2v = float(evv[1]) if evv.size > 1 else np.nan
+    except Exception:
+        l2v = np.nan
+    numv = np.real(np.vdot(z, Hv @ z))
+    denv = float(np.real(np.vdot(z, degv * z))) + 1e-12
+    frustrv = float(1.0 - numv / denv)
+    return {
+        "conn_l2": l2,
+        "conn_gap": gap,
+        "conn_frustr": frustr,
+        "conn_heat1": heat1,
+        "connv_l2": l2v,
+        "connv_frustr": frustrv,
+    }
+
+
+def _triangles(adj: np.ndarray) -> np.ndarray:
+    m = adj.shape[0]
+    tris = []
+    nbr = [np.flatnonzero(adj[i] > 0) for i in range(m)]
+    for i in range(m):
+        ni = nbr[i]
+        ni = ni[ni > i]
+        for a in range(ni.size):
+            u = int(ni[a])
+            for v in ni[a + 1 :]:
+                v = int(v)
+                if adj[u, v] > 0:
+                    tris.append((i, u, v))
+    return np.asarray(tris, dtype=np.int32) if tris else np.zeros((0, 3), dtype=np.int32)
+
+
+def _hodge2(xy: np.ndarray, vel: np.ndarray, adj: np.ndarray) -> dict[str, float]:
+    """Helmholtz–Hodge split of the velocity 1-form on the kNN clique complex."""
+    empty = {n: np.nan for n in hodge2_names()}
+    m = xy.shape[0]
+    ii, jj = np.triu_indices(m, k=1)
+    mask = adj[ii, jj] > 0
+    if not np.any(mask):
+        return empty
+    ii, jj = ii[mask], jj[mask]
+    e = xy[jj] - xy[ii]
+    elen = np.linalg.norm(e, axis=-1, keepdims=True) + 1e-12
+    ehat = e / elen
+    vavg = 0.5 * (vel[ii] + vel[jj])
+    alpha = np.sum(vavg * ehat, axis=-1)
+    n_e = int(alpha.size)
+    # incidence B1: E x N, (B1 f)_e = f_head - f_tail
+    B1 = np.zeros((n_e, m), dtype=np.float64)
+    B1[np.arange(n_e), jj] = 1.0
+    B1[np.arange(n_e), ii] = -1.0
+    div = B1.T @ alpha
+    L0 = B1.T @ B1
+    try:
+        phi = np.linalg.lstsq(L0 + 1e-8 * np.eye(m), div, rcond=None)[0]
+    except Exception:
+        return empty
+    grad = B1 @ phi
+    tris = _triangles(adj)
+    n_t = int(tris.shape[0])
+    curl = np.zeros(0)
+    coexact = np.zeros(n_e)
+    B2 = None
+    if n_t > 0:
+        from scipy.sparse import coo_matrix, eye as speye
+        from scipy.sparse.linalg import cg
+
+        edge_of = {(int(min(a, b)), int(max(a, b))): t for t, (a, b) in enumerate(zip(ii, jj))}
+        rows, cols, data = [], [], []
+        circ = np.zeros(n_t)
+        for t, (a, b, c) in enumerate(tris):
+            for u, v, sgn in ((a, b, 1), (b, c, 1), (c, a, 1)):
+                lo, hi = (u, v) if u < v else (v, u)
+                eidx = edge_of.get((lo, hi))
+                if eidx is None:
+                    continue
+                s = sgn if u < v else -sgn
+                rows.append(t)
+                cols.append(eidx)
+                data.append(s)
+                circ[t] += s * alpha[eidx]
+        curl = circ
+        try:
+            B2 = coo_matrix((data, (rows, cols)), shape=(n_t, n_e), dtype=np.float64).tocsr()
+            L2 = B2 @ B2.T + 1e-8 * speye(n_t, dtype=np.float64)
+            psi, _info = cg(L2, circ, atol=1e-8, maxiter=400)
+            coexact = np.asarray(B2.T @ psi).ravel()
+        except Exception:
+            coexact = np.zeros(n_e)
+            B2 = None
+    harm = alpha - grad - coexact
+    nrm = float(np.dot(alpha, alpha)) + 1e-12
+    eg = float(np.dot(grad, grad) / nrm)
+    ec = float(np.dot(coexact, coexact) / nrm)
+    eh = float(np.dot(harm, harm) / nrm)
+    # harmonic dimension ≈ count of near-zero L1 eigenvalues, capped
+    hdim = np.nan
+    if n_e <= 220:
+        L1 = B1 @ B1.T
+        if n_t > 0 and B2 is not None:
+            L1 = L1 + (B2.T @ B2).toarray()
+        try:
+            ev = np.linalg.eigvalsh(L1)
+            hdim = float(np.sum(np.real(ev) < 1e-6 * max(float(np.max(np.abs(ev))), 1e-12)))
+        except Exception:
+            hdim = np.nan
+    return {
+        "h2_ntri": float(n_t),
+        "h2_grad_frac": eg,
+        "h2_curl_frac": ec,
+        "h2_harm_frac": eh,
+        "h2_grad_mean": float(np.mean(grad)),
+        "h2_curl_mean": float(np.mean(coexact)),
+        "h2_harm_mean": float(np.mean(harm)),
+        "h2_harm_dim": hdim,
+        "h2_curl_signed": float(np.mean(curl)) if curl.size else np.nan,
+    }
+
+
+def _vamp2(X: np.ndarray) -> float:
+    if X.ndim != 2 or X.shape[1] < 4 or X.shape[0] < 1:
+        return np.nan
+    X0, X1 = X[:, :-1], X[:, 1:]
+    X0 = X0 - X0.mean(axis=1, keepdims=True)
+    X1 = X1 - X1.mean(axis=1, keepdims=True)
+    n = X0.shape[1]
+    d = X0.shape[0]
+    C00 = X0 @ X0.T / n + 1e-6 * np.eye(d)
+    C11 = X1 @ X1.T / n + 1e-6 * np.eye(d)
+    C01 = X0 @ X1.T / n
+    try:
+        s0, u0 = np.linalg.eigh(C00)
+        s1, u1 = np.linalg.eigh(C11)
+        W0 = u0 * (1.0 / np.sqrt(np.maximum(s0, 1e-12)))
+        W1 = u1 * (1.0 / np.sqrt(np.maximum(s1, 1e-12)))
+        sv = np.linalg.svd(W0.T @ C01 @ W1, compute_uv=False)
+        return float(np.sum(sv**2))
+    except Exception:
+        return np.nan
+
+
+def _kedmd(X: np.ndarray, sigma_mult: float, rank: int, dt: float = 1.0) -> dict[str, float]:
+    empty = {"growth_max": np.nan, "freq_max": np.nan, "resid": np.nan, "radius": np.nan}
+    if X.ndim != 2 or X.shape[1] < 4:
+        return empty
+    X = np.nan_to_num(np.asarray(X, dtype=np.float64), nan=0.0)
+    X0, X1 = X[:, :-1].T, X[:, 1:].T
+    n, d = X0.shape
+    if n < 3:
+        return empty
+    dif = X0[:, None, :] - X0[None, :, :]
+    d2 = np.sum(dif * dif, axis=-1)
+    med = float(np.median(np.sqrt(d2[np.triu_indices(n, 1)]))) if n > 1 else 1.0
+    sig = float(max(sigma_mult * (med if np.isfinite(med) and med > 1e-12 else 1.0), 1e-9))
+
+    def rbf(A, B):
+        dd = np.sum((A[:, None, :] - B[None, :, :]) ** 2, axis=-1)
+        return np.exp(-dd / (2.0 * sig * sig))
+
+    G = rbf(X0, X0)
+    A = rbf(X0, X1)
+    try:
+        evals, evecs = np.linalg.eigh(G)
+        order = np.argsort(evals)[::-1]
+        r = min(int(rank), int(np.sum(evals > 1e-10)), n)
+        if r < 1:
+            return empty
+        idx = order[:r]
+        U = evecs[:, idx]
+        s = np.maximum(evals[idx], 1e-10)
+        Ginv = (U / s) @ U.T
+        K = Ginv @ A
+        mu = np.linalg.eigvals(K)
+        resid = float(np.linalg.norm(A - G @ (pinv(G) @ A)) / (np.linalg.norm(A) + 1e-12))
+    except Exception:
+        return empty
+    mu = mu[np.isfinite(mu) & (np.abs(mu) > 1e-12)]
+    if mu.size == 0:
+        return empty
+    logmu = np.log(mu) / max(dt, 1e-9)
+    ang = np.abs(np.angle(mu))
+    keep = ang < 0.9 * np.pi
+    freq = np.abs(np.imag(logmu))
+    freq_use = freq[keep] if np.any(keep) else freq
+    return {
+        "growth_max": float(np.max(np.real(logmu))),
+        "freq_max": float(np.max(freq_use)) if freq_use.size else np.nan,
+        "resid": resid,
+        "radius": float(np.max(np.abs(mu))),
+    }
+
+
+def _dmd(X: np.ndarray, dt: float = 1.0, rank: int | None = None) -> dict[str, float]:
     keys = [
         "growth_max",
         "growth_mean",
@@ -307,8 +622,18 @@ def _dmd(X: np.ndarray, dt: float = 1.0) -> dict[str, float]:
         X = np.nan_to_num(X, nan=0.0)
     X0, X1 = X[:, :-1], X[:, 1:]
     try:
-        A = X1 @ pinv(X0)
-        mu = np.linalg.eigvals(A)
+        if rank is not None and min(X0.shape) > 1:
+            U, s, Vt = np.linalg.svd(X0, full_matrices=False)
+            r = min(int(rank), int(np.sum(s > 1e-10)))
+            if r < 1:
+                return empty
+            Ur, sr, Vtr = U[:, :r], s[:r], Vt[:r]
+            Atilde = Ur.T @ X1 @ Vtr.T * (1.0 / sr)
+            mu = np.linalg.eigvals(Atilde)
+            A = Ur @ Atilde @ Ur.T
+        else:
+            A = X1 @ pinv(X0)
+            mu = np.linalg.eigvals(A)
     except Exception:
         return empty
     mu = mu[np.isfinite(mu) & (np.abs(mu) > 1e-12)]
@@ -430,10 +755,27 @@ def frame_geometry(pos: np.ndarray, vel: np.ndarray, k: int | None = None) -> di
             else np.nan
         )
     feat.update(_hodge(xy, vv, knn))
+    feat.update(_connection_features(w, vv))
+    feat.update(_hodge2(xy, vv, knn))
     order = np.argsort(evals)
     evecs = evecs_k[:, order]
     r = min(R_GFT, m - 1)
     gft = evecs[:, 1 : 1 + r]
+    gft_v = np.concatenate([gft.T @ vv[:, 0], gft.T @ vv[:, 1]])
+    obs = np.array(
+        [
+            feat.get("spat_knn_l2", np.nan),
+            feat.get("spat_knn_ell_mean", np.nan),
+            feat.get("hodge_div_mean", np.nan),
+            feat.get("hodge_rad_mean", np.nan),
+            feat.get("hodge_curl", np.nan),
+            feat.get("conn_l2", np.nan),
+            feat.get("conn_frustr", np.nan),
+            feat.get("h2_curl_signed", np.nan),
+            *gft_v.tolist(),
+        ],
+        dtype=np.float64,
+    )
     return {
         "feat": feat,
         "evals_knn": evals,
@@ -444,6 +786,9 @@ def frame_geometry(pos: np.ndarray, vel: np.ndarray, k: int | None = None) -> di
         "vv": vv,
         "l2": feat["spat_knn_l2"],
         "ell": feat["spat_knn_ell_mean"],
+        "conn_l2": feat.get("conn_l2", np.nan),
+        "conn_frustr": feat.get("conn_frustr", np.nan),
+        "obs": obs,
         "fiedler": evecs[:, 1] if m > 1 else None,
     }
 
@@ -544,6 +889,12 @@ def window_operator_features(
         if np.isfinite(e0) and np.isfinite(e1) and e0 > 1e-12 and e1 > 1e-12:
             out["dyn_dell"] = float((e1 - e0) / dt_win)
             out["dyn_dlog_ell"] = float((np.log(e1) - np.log(e0)) / dt_win)
+        c0, c1 = geo0.get("conn_l2", np.nan), geo1.get("conn_l2", np.nan)
+        if np.isfinite(c0) and np.isfinite(c1):
+            out["dyn_dconn_l2"] = float((c1 - c0) / dt_win)
+        f0c, f1c = geo0.get("conn_frustr", np.nan), geo1.get("conn_frustr", np.nan)
+        if np.isfinite(f0c) and np.isfinite(f1c):
+            out["dyn_dfrustr"] = float((f1c - f0c) / dt_win)
     frames, dt = _snapshot_frames(start, end, max_snapshots=48)
     C = _gft_series(pos, vel, frames, geo_mid)
     dmd = _dmd(C, dt=dt)
@@ -586,4 +937,56 @@ def window_operator_features(
     out["havok_vr_kurt"] = hv["vr_kurt"]
     out["havok_vr_tail"] = hv["vr_tail"]
     out["havok_energy_ratio"] = hv["energy_ratio"]
+    # Kernel-EDMD on GFT velocity + cheap λ₂ + linearly interpolated Hodge/connection scalars
+    # (does not recompute full geometry at every snapshot).
+    l2_snap = []
+    for fr in frames:
+        fr = int(fr)
+        if cache is not None and cache.get(fr) is not None:
+            l2_snap.append(cache[fr]["l2"])
+        else:
+            l2_snap.append(lambda2_knn(pos[fr], vel[fr], k=k))
+    l2_snap = np.nan_to_num(np.asarray(l2_snap, dtype=np.float64), nan=0.0)
+    nsnap = int(C.shape[1])
+
+    def _lerp(a, b):
+        a = float(a) if np.isfinite(a) else 0.0
+        b = float(b) if np.isfinite(b) else a
+        if nsnap <= 1:
+            return np.array([a], dtype=np.float64)
+        return np.linspace(a, b, nsnap)
+
+    if geo0 is None:
+        geo0 = geo_mid
+    if geo1 is None:
+        geo1 = geo_mid
+    f0, f1 = geo0["feat"], geo1["feat"]
+    Obs = np.vstack(
+        [
+            C,
+            l2_snap[None, :],
+            _lerp(f0.get("hodge_rad_mean", np.nan), f1.get("hodge_rad_mean", np.nan))[None, :],
+            _lerp(f0.get("hodge_div_mean", np.nan), f1.get("hodge_div_mean", np.nan))[None, :],
+            _lerp(f0.get("conn_frustr", np.nan), f1.get("conn_frustr", np.nan))[None, :],
+            _lerp(f0.get("h2_curl_signed", np.nan), f1.get("h2_curl_signed", np.nan))[None, :],
+        ]
+    )
+    out["kedmd_vamp2"] = _vamp2(Obs)
+    tag_s = {0.5: "s05", 1.0: "s1", 2.0: "s2"}
+    for sm in KEDMD_SIGMA_GRID:
+        for rk in KEDMD_RANK_GRID:
+            kd = _kedmd(Obs, sigma_mult=sm, rank=rk, dt=dt)
+            pre = f"kedmd_{tag_s[sm]}_r{rk}"
+            out[f"{pre}_growth_max"] = kd["growth_max"]
+            out[f"{pre}_freq_max"] = kd["freq_max"]
+            out[f"{pre}_resid"] = kd["resid"]
+            out[f"{pre}_radius"] = kd["radius"]
+    for delays in HANKEL_DELAY_GRID:
+        H = _hankel(C, delays)
+        for rk in HANKEL_RANK_GRID:
+            hd = _dmd(H, dt=dt, rank=rk) if H.size else {}
+            pre = f"hdmd_d{delays}_r{rk}"
+            out[f"{pre}_growth_max"] = hd.get("growth_max", np.nan)
+            out[f"{pre}_freq_max"] = hd.get("freq_max", np.nan)
+            out[f"{pre}_resid"] = hd.get("resid", np.nan)
     return out

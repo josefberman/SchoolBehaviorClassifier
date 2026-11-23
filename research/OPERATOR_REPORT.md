@@ -4,7 +4,8 @@ Josef Berman, Swarm & AI Lab (University of Haifa). Branch
 `research/feature-space-and-sim`. Annotation files were not modified.
 H5 trajectories from `https://huggingface.co/buckets/josefberman/SchoolingFish`.
 Every number below is from `scripts/research_operator.py` (JSON in
-`research/results/operator_*.json`).
+`research/results/operator_*.json`). Chronological run log:
+[`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md).
 
 Linked from `research/REPORT.md`. This pass **drops all hand-crafted Φ / M /
 dlogR** from the feature vector and asks whether a purely operator-theoretic

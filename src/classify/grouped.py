@@ -124,6 +124,7 @@ def grouped_cv(
     model: str = "xgb",
     feature_names: list[str] | None = None,
     permute_repeats: int = 0,
+    shap: bool = False,
 ) -> dict:
     """Leave-one-group-out. groups are video ids (strings)."""
     X = np.asarray(X, dtype=np.float64)
@@ -137,6 +138,7 @@ def grouped_cv(
     oof_group: list[str] = []
     fold_rows = []
     importances = defaultdict(list)
+    shap_abs = defaultdict(list)
 
     for held in group_ids:
         tr = groups != held
@@ -223,6 +225,27 @@ def grouped_cv(
                     )
                 importances[fname].append(float(np.mean(drops)))
 
+        if shap and feature_names and model == "xgb":
+            try:
+                import shap as shap_lib
+
+                explainer = shap_lib.TreeExplainer(clf)
+                sv = explainer.shap_values(Xte)
+                arr = np.asarray(sv)
+                # binary (n, d); multiclass (n, d, k) or list of (n, d)
+                if isinstance(sv, list):
+                    arr = np.mean(np.abs(np.stack(sv, axis=-1)), axis=-1)
+                elif arr.ndim == 3:
+                    arr = np.mean(np.abs(arr), axis=-1)
+                else:
+                    arr = np.abs(arr)
+                mean_abs = np.mean(arr, axis=0)
+                for j, fname in enumerate(feature_names):
+                    if j < mean_abs.size:
+                        shap_abs[fname].append(float(mean_abs[j]))
+            except Exception:
+                pass
+
     y_t = np.array(oof_true, dtype=object)
     y_p = np.array(oof_pred, dtype=object)
     report = {
@@ -251,6 +274,10 @@ def grouped_cv(
     if importances:
         report["permutation_importance"] = {
             k: float(np.mean(v)) for k, v in sorted(importances.items(), key=lambda kv: -np.mean(kv[1]))
+        }
+    if shap_abs:
+        report["shap_importance"] = {
+            k: float(np.mean(v)) for k, v in sorted(shap_abs.items(), key=lambda kv: -np.mean(kv[1]))
         }
     return report
 
